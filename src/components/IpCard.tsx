@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,25 +30,6 @@ export function IpCard({
   onRefresh,
   isLoading
 }: IpCardProps) {
-  // Add auto-refresh on mount
-  useEffect(() => {
-    // Refresh on mount
-    onRefresh();
-
-    // Add event listener for visibility change
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        onRefresh();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [onRefresh]);
-
   const handleShare = async () => {
     const data = {
       ip,

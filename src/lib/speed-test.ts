@@ -54,79 +54,81 @@ async function measureDownloadSpeed(
     let downloadedBytes = 0;
     let startTime = performance.now();
     let lastProgressTime = startTime;
-    let lastBytesRead = 0;
     let speedSamples: number[] = [];
-    let totalChunks = 800; // We'll get this from the first response (800 chunks * 64KB = 50MB)
-    const chunkSize = 64 * 1024; // 64KB chunks
-    const totalSize = totalChunks * chunkSize;
-    const maxConcurrentDownloads = 6; // Increased parallel downloads since chunks are smaller
+    const totalSize = 100 * 1024 * 1024; // 100MB total
+    const windowSize = 500; // 500ms window for speed calculation
+    let speedWindow: { bytes: number; time: number }[] = [];
 
     // Start progress at 0%
     onProgress?.(0, 0);
 
-    // Download chunks in parallel batches
-    for (let chunkNumber = 0; chunkNumber < totalChunks; chunkNumber += maxConcurrentDownloads) {
-      const downloadPromises = [];
+    // Single large file download with progress tracking
+    const response = await fetch(`${server.url}&size=${totalSize}&t=${new Date().getTime()}`, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Download failed: ${response.status} ${errorText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is null');
+    }
+
+    const reader = response.body.getReader();
+    let isDone = false;
+
+    while (!isDone) {
+      const { done, value } = await reader.read();
       
-      // Create a batch of download promises
-      for (let i = 0; i < maxConcurrentDownloads && (chunkNumber + i) < totalChunks; i++) {
-        const currentChunk = chunkNumber + i;
-        const promise = fetch(`${server.url}&chunk=${currentChunk}&t=${new Date().getTime()}`, {
-          method: 'GET',
-          cache: 'no-store'
-        }).then(async response => {
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => 'Unknown error');
-            throw new Error(`Download failed: ${response.status} ${errorText}`);
-          }
-
-          // Update total chunks from the first response
-          if (currentChunk === 0) {
-            const totalChunksHeader = response.headers.get('X-Total-Chunks');
-            if (totalChunksHeader) {
-              totalChunks = parseInt(totalChunksHeader, 10);
-            }
-          }
-
-          return response.arrayBuffer();
-        });
-        
-        downloadPromises.push(promise);
+      if (done) {
+        isDone = true;
+        continue;
       }
 
-      // Wait for all downloads in this batch to complete
-      const chunks = await Promise.all(downloadPromises);
-      
-      // Update progress and speed
-      for (const chunk of chunks) {
-        downloadedBytes += chunk.byteLength;
-        const progress = (downloadedBytes / totalSize) * 100;
-        const currentTime = performance.now();
-        const timeDiff = currentTime - lastProgressTime;
-
-        // Calculate speed every 50ms for smoother updates
-        if (timeDiff >= 50) {
-          const bytesDiff = downloadedBytes - lastBytesRead;
-          const currentSpeed = (bytesDiff * 8) / (timeDiff / 1000) / (1024 * 1024); // Mbps
-          speedSamples.push(currentSpeed);
-          
-          onProgress?.(progress, currentSpeed);
-          
-          lastProgressTime = currentTime;
-          lastBytesRead = downloadedBytes;
+      if (value) {
+        const now = performance.now();
+        downloadedBytes += value.length;
+        
+        // Add to speed window
+        speedWindow.push({ bytes: value.length, time: now });
+        
+        // Remove old samples outside the window
+        while (speedWindow.length > 0 && (now - speedWindow[0].time) > windowSize) {
+          speedWindow.shift();
+        }
+        
+        // Calculate current speed based on window
+        if (speedWindow.length > 1) {
+          const windowBytes = speedWindow.reduce((sum, sample) => sum + sample.bytes, 0);
+          const windowTime = (speedWindow[speedWindow.length - 1].time - speedWindow[0].time) / 1000; // seconds
+          if (windowTime > 0) {
+            const currentSpeed = (windowBytes * 8) / windowTime / (1024 * 1024); // Mbps
+            speedSamples.push(currentSpeed);
+            
+            const progress = Math.min((downloadedBytes / totalSize) * 100, 100);
+            onProgress?.(progress, currentSpeed);
+          }
         }
       }
     }
 
     const totalTime = (performance.now() - startTime) / 1000; // in seconds
     
-    // Calculate average speed excluding the lowest and highest 10% of samples
-    const sortedSpeeds = speedSamples.sort((a, b) => a - b);
-    const trimAmount = Math.floor(speedSamples.length * 0.1);
-    const trimmedSpeeds = sortedSpeeds.slice(trimAmount, -trimAmount);
-    const avgSpeed = trimmedSpeeds.reduce((a, b) => a + b, 0) / trimmedSpeeds.length || 0;
+    // Calculate average speed using the highest sustained speed
+    // Take the top 25% of samples for the average
+    const sortedSpeeds = speedSamples.sort((a, b) => b - a); // Sort descending
+    const topSpeedCount = Math.max(1, Math.floor(speedSamples.length * 0.25));
+    const avgSpeed = sortedSpeeds.slice(0, topSpeedCount).reduce((a, b) => a + b, 0) / topSpeedCount;
 
     console.log(`Download completed: ${(downloadedBytes / (1024 * 1024)).toFixed(2)} MB in ${totalTime.toFixed(2)}s`);
+    console.log(`Average speed: ${avgSpeed.toFixed(2)} Mbps`);
     
     // Ensure we report 100% progress at the end
     onProgress?.(100, avgSpeed);
@@ -208,79 +210,88 @@ async function measureUploadSpeed(
 ): Promise<number> {
   try {
     console.log('Starting upload test');
-
-    // Create test data (50MB total in 5MB chunks)
-    const chunkSize = 5 * 1024 * 1024; // 5MB chunks
-    const totalSize = 50 * 1024 * 1024; // 50MB total
-    const chunk = new Uint8Array(chunkSize);
-    crypto.getRandomValues(chunk); // Fill with random data
     
     let uploadedBytes = 0;
     let startTime = performance.now();
     let lastProgressTime = startTime;
     let lastBytesUploaded = 0;
     let speedSamples: number[] = [];
-    const maxConcurrentUploads = 2; // Number of parallel uploads
+    const totalSize = 50 * 1024 * 1024; // 50MB total for better handling
+    const chunkSize = 64 * 1024; // 64KB chunks for generating data (crypto API limit)
+    const uploadChunkSize = 512 * 1024; // 512KB upload chunks for more frequent measurements
+    const windowSize = 500; // 500ms window for speed calculation
+    let speedWindow: { bytes: number; time: number }[] = [];
 
     // Start progress at 0%
     onProgress?.(0, 0);
 
-    // Upload chunks in parallel batches
-    for (let offset = 0; offset < totalSize; offset += chunkSize * maxConcurrentUploads) {
-      const uploadPromises = [];
+    // Generate the full random data first in 64KB chunks
+    console.log('Generating test data...');
+    const fullData = new Uint8Array(totalSize);
+    for (let offset = 0; offset < totalSize; offset += chunkSize) {
+      const size = Math.min(chunkSize, totalSize - offset);
+      const chunk = new Uint8Array(size);
+      crypto.getRandomValues(chunk);
+      fullData.set(chunk, offset);
       
-      // Create a batch of upload promises
-      for (let i = 0; i < maxConcurrentUploads && (offset + i * chunkSize) < totalSize; i++) {
-        const currentOffset = offset + i * chunkSize;
-        const currentSize = Math.min(chunkSize, totalSize - currentOffset);
-        
-        const promise = fetch(server.uploadUrl + '&t=' + new Date().getTime(), {
-          method: 'POST',
-          body: chunk.slice(0, currentSize),
-          cache: 'no-store'
-        }).then(async response => {
-          if (!response.ok) {
-            throw new Error(`Upload failed: ${response.status}`);
-          }
-          return currentSize;
-        });
-        
-        uploadPromises.push(promise);
+      // Report progress of data generation
+      const genProgress = (offset / totalSize) * 10; // Use first 10% for data generation
+      onProgress?.(genProgress, 0);
+    }
+    console.log('Test data generated');
+
+    // Upload in chunks for progress tracking
+    for (let offset = 0; offset < totalSize; offset += uploadChunkSize) {
+      const chunkStartTime = performance.now();
+      const size = Math.min(uploadChunkSize, totalSize - offset);
+      const chunk = fullData.slice(offset, offset + size);
+      
+      const response = await fetch(`${server.uploadUrl}&size=${size}&offset=${offset}&total=${totalSize}&t=${new Date().getTime()}`, {
+        method: 'POST',
+        body: chunk,
+        cache: 'no-store'
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Upload failed: ${response.status} ${errorText}`);
       }
 
-      // Wait for all uploads in this batch to complete
-      const uploadedSizes = await Promise.all(uploadPromises);
+      const now = performance.now();
+      uploadedBytes += size;
       
-      // Update progress and speed
-      for (const size of uploadedSizes) {
-        uploadedBytes += size;
-        const progress = (uploadedBytes / totalSize) * 100;
-        const currentTime = performance.now();
-        const timeDiff = currentTime - lastProgressTime;
-
-        // Calculate speed every 100ms
-        if (timeDiff >= 100) {
-          const bytesDiff = uploadedBytes - lastBytesUploaded;
-          const currentSpeed = (bytesDiff * 8) / (timeDiff / 1000) / (1024 * 1024); // Mbps
+      // Add to speed window
+      speedWindow.push({ bytes: size, time: now });
+      
+      // Remove old samples outside the window
+      while (speedWindow.length > 0 && (now - speedWindow[0].time) > windowSize) {
+        speedWindow.shift();
+      }
+      
+      // Calculate current speed based on window
+      if (speedWindow.length > 1) {
+        const windowBytes = speedWindow.reduce((sum, sample) => sum + sample.bytes, 0);
+        const windowTime = (speedWindow[speedWindow.length - 1].time - speedWindow[0].time) / 1000; // seconds
+        if (windowTime > 0) {
+          const currentSpeed = (windowBytes * 8) / windowTime / (1024 * 1024); // Mbps
           speedSamples.push(currentSpeed);
           
+          const progress = 10 + ((uploadedBytes / totalSize) * 90); // Start at 10% (after data gen)
           onProgress?.(progress, currentSpeed);
-          
-          lastProgressTime = currentTime;
-          lastBytesUploaded = uploadedBytes;
         }
       }
     }
 
     const totalTime = (performance.now() - startTime) / 1000; // in seconds
     
-    // Calculate average speed excluding the lowest and highest 10% of samples
-    const sortedSpeeds = speedSamples.sort((a, b) => a - b);
-    const trimAmount = Math.floor(speedSamples.length * 0.1);
-    const trimmedSpeeds = sortedSpeeds.slice(trimAmount, -trimAmount);
-    const avgSpeed = trimmedSpeeds.reduce((a, b) => a + b, 0) / trimmedSpeeds.length || 0;
+    // Calculate average speed using the highest sustained speed
+    // Take the top 25% of samples for the average
+    const sortedSpeeds = speedSamples.sort((a, b) => b - a); // Sort descending
+    const topSpeedCount = Math.max(1, Math.floor(speedSamples.length * 0.25));
+    const avgSpeed = sortedSpeeds.slice(0, topSpeedCount).reduce((a, b) => a + b, 0) / topSpeedCount;
 
     console.log(`Upload completed: ${(uploadedBytes / (1024 * 1024)).toFixed(2)} MB in ${totalTime.toFixed(2)}s`);
+    console.log(`Average speed: ${avgSpeed.toFixed(2)} Mbps`);
     
     // Ensure we report 100% progress at the end
     onProgress?.(100, avgSpeed);

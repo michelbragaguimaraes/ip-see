@@ -16,22 +16,37 @@ async function handleDownload(request: Request) {
   try {
     console.log('Starting download test');
     
-    // Get the chunk number from the URL
+    // Get the requested size from the URL
     const url = new URL(request.url);
-    const chunkNumber = parseInt(url.searchParams.get('chunk') || '0', 10);
+    const requestedSize = parseInt(url.searchParams.get('size') || '104857600', 10); // Default to 100MB
     
-    // Generate a chunk of data (64KB per chunk to stay within Netlify limits)
-    const chunkSize = 64 * 1024; // 64KB chunks
-    const chunk = new Uint8Array(chunkSize);
-    crypto.getRandomValues(chunk);
+    // Create a ReadableStream to stream the data
+    const stream = new ReadableStream({
+      async start(controller) {
+        let totalSent = 0;
+        const chunkSize = 64 * 1024; // 64KB chunks
+        
+        while (totalSent < requestedSize) {
+          const remainingSize = requestedSize - totalSent;
+          const currentChunkSize = Math.min(chunkSize, remainingSize);
+          const chunk = new Uint8Array(currentChunkSize);
+          crypto.getRandomValues(chunk);
+          controller.enqueue(chunk);
+          totalSent += currentChunkSize;
+          
+          // Small delay to prevent overwhelming the connection
+          await new Promise(resolve => setTimeout(resolve, 1));
+        }
+        
+        controller.close();
+      }
+    });
     
-    // Return the chunk with appropriate headers
-    return new Response(chunk, {
+    // Return the stream with appropriate headers
+    return new Response(stream, {
       headers: {
         'Content-Type': 'application/octet-stream',
-        'Content-Length': chunkSize.toString(),
-        'X-Total-Chunks': '800', // Total number of chunks (50MB total = 800 * 64KB)
-        'X-Chunk-Number': chunkNumber.toString(),
+        'Content-Length': requestedSize.toString(),
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
@@ -61,7 +76,7 @@ async function handleUpload(request: Request) {
     const endTime = Date.now();
     
     // Calculate actual upload speed based on the time it took to receive the data
-    const duration = Math.max(0.1, (endTime - startTime) / 1000); // in seconds, minimum 0.1s to avoid division by zero
+    const duration = Math.max(0.001, (endTime - startTime) / 1000); // in seconds, minimum 0.001s
     const speedInMbps = (body.byteLength * 8) / (1024 * 1024 * duration);
     
     console.log(`Upload completed: ${(body.byteLength / (1024 * 1024)).toFixed(2)} MB in ${duration.toFixed(2)}s, Speed: ${speedInMbps.toFixed(2)} Mbps`);

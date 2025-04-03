@@ -206,8 +206,8 @@ async function measureUploadSpeed(
 ): Promise<number> {
   try {
     // Use larger chunks for better performance
-    const chunkSize = 16 * 1024 * 1024; // 16MB chunks
-    const totalSize = 128 * 1024 * 1024; // 128MB total
+    const chunkSize = 32 * 1024 * 1024; // 32MB chunks
+    const totalSize = 256 * 1024 * 1024; // 256MB total
     let uploadedSize = 0;
     const startTime = performance.now();
     let lastProgressUpdate = 0;
@@ -219,6 +219,7 @@ async function measureUploadSpeed(
     const chunk = new ArrayBuffer(chunkSize);
     const totalChunks = Math.ceil(totalSize / chunkSize);
     const uploadPromises = [];
+    const maxConcurrentUploads = 6; // Increase concurrent uploads
 
     // Start multiple uploads in parallel for better throughput
     for (let i = 0; i < totalChunks; i++) {
@@ -245,16 +246,16 @@ async function measureUploadSpeed(
           lastSpeedUpdate = currentTime;
         }
 
-        // Log progress every 32MB
-        if (uploadedSize % (32 * 1024 * 1024) === 0) {
+        // Log progress every 64MB
+        if (uploadedSize % (64 * 1024 * 1024) === 0) {
           console.log(`Upload Progress: ${Math.round(uploadedSize / 1024 / 1024)}MB (${progress.toFixed(1)}%), Current Speed: ${currentSpeed.toFixed(2)} Mbps`);
         }
       });
 
       uploadPromises.push(uploadPromise);
 
-      // Start uploads in batches of 4 for better control
-      if (uploadPromises.length === 4 || i === totalChunks - 1) {
+      // Start uploads in larger batches
+      if (uploadPromises.length === maxConcurrentUploads || i === totalChunks - 1) {
         await Promise.all(uploadPromises);
         uploadPromises.length = 0;
       }

@@ -1,5 +1,13 @@
 import { NextResponse } from 'next/server';
 
+// Increase the body size limit for the API route
+export const config = {
+  api: {
+    bodyParser: false,
+    responseLimit: false,
+  },
+};
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const bytes = searchParams.get('bytes');
@@ -22,7 +30,8 @@ export async function GET(request: Request) {
       body: type === 'upload' ? new ArrayBuffer(Number(bytes)) : undefined,
       headers: {
         'Accept': '*/*',
-        'Cache-Control': 'no-cache'
+        'Cache-Control': 'no-cache',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }
     });
 
@@ -55,7 +64,8 @@ export async function POST(request: Request) {
       headers: {
         'Accept': '*/*',
         'Cache-Control': 'no-cache',
-        'Content-Type': 'application/octet-stream'
+        'Content-Type': 'application/octet-stream',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }
     });
 

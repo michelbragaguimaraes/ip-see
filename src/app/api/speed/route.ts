@@ -16,87 +16,49 @@ async function handleDownload(request: Request) {
   try {
     console.log('Starting download test');
     
-    // Use a reliable CDN for download test (100MB file)
-    const url = 'https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js';
+    // Generate a large file (100MB) of random data
+    const chunkSize = 1024 * 1024; // 1MB chunks
+    const totalSize = 100 * chunkSize; // 100MB total
     
-    console.log(`Fetching from: ${url}`);
-    
-    const startTime = Date.now();
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': '*/*',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      },
-      cache: 'no-store',
-      next: { revalidate: 0 }
-    }).catch(error => {
-      console.error('Fetch error:', error);
-      throw new Error(`Fetch failed: ${error.message}`);
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
-      console.error(`Download failed with status: ${response.status}, Error: ${errorText}`);
-      return NextResponse.json(
-        { error: `Download failed: ${response.status}`, details: errorText },
-        { status: response.status }
-      );
-    }
-
-    // Get the content length
-    const contentLength = response.headers.get('Content-Length');
-    const totalBytes = contentLength ? parseInt(contentLength, 10) : 100 * 1024; // Default to 100KB if not provided
-    
-    // Read the response as a stream
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('Failed to get response reader');
-    }
-    
-    let bytesRead = 0;
-    let lastProgressTime = Date.now();
-    let lastBytesRead = 0;
-    
-    // Read the stream
-    while (true) {
-      const { done, value } = await reader.read().catch(error => {
-        console.error('Stream read error:', error);
-        throw new Error(`Stream read failed: ${error.message}`);
-      });
-      
-      if (done) break;
-      
-      bytesRead += value.length;
-      
-      // Calculate current speed every 100ms
-      const now = Date.now();
-      const timeDiff = now - lastProgressTime;
-      if (timeDiff >= 100) {
-        const bytesDiff = bytesRead - lastBytesRead;
-        const currentSpeed = (bytesDiff * 8) / (timeDiff / 1000) / (1024 * 1024); // Mbps
+    // Create a ReadableStream that generates random data
+    const stream = new ReadableStream({
+      start(controller) {
+        let bytesGenerated = 0;
         
-        // Log progress every 10KB
-        if (bytesRead % (10 * 1024) < value.length) {
-          console.log(`Downloaded ${(bytesRead / 1024).toFixed(2)} KB, Current Speed: ${currentSpeed.toFixed(2)} Mbps`);
+        function pushChunk() {
+          if (bytesGenerated >= totalSize) {
+            controller.close();
+            return;
+          }
+          
+          const remainingBytes = totalSize - bytesGenerated;
+          const currentChunkSize = Math.min(chunkSize, remainingBytes);
+          const chunk = new Uint8Array(currentChunkSize);
+          
+          // Fill with random data
+          crypto.getRandomValues(chunk);
+          
+          controller.enqueue(chunk);
+          bytesGenerated += currentChunkSize;
+          
+          // Schedule next chunk
+          setTimeout(pushChunk, 0);
         }
         
-        lastProgressTime = now;
-        lastBytesRead = bytesRead;
+        pushChunk();
       }
-    }
-    
-    const endTime = Date.now();
-    const duration = (endTime - startTime) / 1000; // in seconds
-    
-    // Calculate average speed in Mbps
-    const speedInMbps = (bytesRead * 8) / (1024 * 1024 * duration);
-    
-    console.log(`Download completed: ${(bytesRead / 1024).toFixed(2)} KB in ${duration.toFixed(2)}s, Speed: ${speedInMbps.toFixed(2)} Mbps`);
-    
-    return NextResponse.json({ speed: speedInMbps });
+    });
+
+    // Return the stream with appropriate headers
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': totalSize.toString(),
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   } catch (error) {
     console.error('Download error:', error);
     return NextResponse.json(

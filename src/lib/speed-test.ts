@@ -51,15 +51,9 @@ async function measureDownloadSpeed(
   try {
     console.log('Starting download test');
     
-    // Use a large file from a fast CDN for direct browser download
-    const url = 'https://cdn.jsdelivr.net/gh/jquery/jquery@3.7.1/dist/jquery.min.js';
-    const response = await fetch(url + '?' + new Date().getTime(), {
+    const response = await fetch(server.url + '?' + new Date().getTime(), {
       method: 'GET',
-      cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
-      }
+      cache: 'no-store'
     });
 
     if (!response.ok) {
@@ -118,7 +112,7 @@ async function measureDownloadSpeed(
     const sortedSpeeds = speedSamples.sort((a, b) => a - b);
     const trimAmount = Math.floor(speedSamples.length * 0.1);
     const trimmedSpeeds = sortedSpeeds.slice(trimAmount, -trimAmount);
-    const avgSpeed = trimmedSpeeds.reduce((a, b) => a + b, 0) / trimmedSpeeds.length;
+    const avgSpeed = trimmedSpeeds.reduce((a, b) => a + b, 0) / trimmedSpeeds.length || 0;
 
     console.log(`Download completed: ${(downloadedBytes / (1024 * 1024)).toFixed(2)} MB in ${totalTime.toFixed(2)}s`);
     

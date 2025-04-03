@@ -17,7 +17,7 @@ async function handleDownload(request: Request) {
     console.log('Starting download test');
     
     // Use a reliable CDN for download test (100MB file)
-    const url = 'https://speed.hetzner.de/100MB.bin';
+    const url = 'https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js';
     
     console.log(`Fetching from: ${url}`);
     
@@ -32,19 +32,23 @@ async function handleDownload(request: Request) {
       },
       cache: 'no-store',
       next: { revalidate: 0 }
+    }).catch(error => {
+      console.error('Fetch error:', error);
+      throw new Error(`Fetch failed: ${error.message}`);
     });
 
     if (!response.ok) {
-      console.error(`Download failed with status: ${response.status}`);
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`Download failed with status: ${response.status}, Error: ${errorText}`);
       return NextResponse.json(
-        { error: `Download failed: ${response.status}` },
+        { error: `Download failed: ${response.status}`, details: errorText },
         { status: response.status }
       );
     }
 
     // Get the content length
     const contentLength = response.headers.get('Content-Length');
-    const totalBytes = contentLength ? parseInt(contentLength, 10) : 100 * 1024 * 1024; // Default to 100MB if not provided
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 100 * 1024; // Default to 100KB if not provided
     
     // Read the response as a stream
     const reader = response.body?.getReader();
@@ -58,7 +62,10 @@ async function handleDownload(request: Request) {
     
     // Read the stream
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await reader.read().catch(error => {
+        console.error('Stream read error:', error);
+        throw new Error(`Stream read failed: ${error.message}`);
+      });
       
       if (done) break;
       
@@ -71,9 +78,9 @@ async function handleDownload(request: Request) {
         const bytesDiff = bytesRead - lastBytesRead;
         const currentSpeed = (bytesDiff * 8) / (timeDiff / 1000) / (1024 * 1024); // Mbps
         
-        // Log progress every 10MB
-        if (bytesRead % (10 * 1024 * 1024) < value.length) {
-          console.log(`Downloaded ${(bytesRead / (1024 * 1024)).toFixed(2)} MB, Current Speed: ${currentSpeed.toFixed(2)} Mbps`);
+        // Log progress every 10KB
+        if (bytesRead % (10 * 1024) < value.length) {
+          console.log(`Downloaded ${(bytesRead / 1024).toFixed(2)} KB, Current Speed: ${currentSpeed.toFixed(2)} Mbps`);
         }
         
         lastProgressTime = now;
@@ -87,7 +94,7 @@ async function handleDownload(request: Request) {
     // Calculate average speed in Mbps
     const speedInMbps = (bytesRead * 8) / (1024 * 1024 * duration);
     
-    console.log(`Download completed: ${(bytesRead / (1024 * 1024)).toFixed(2)} MB in ${duration.toFixed(2)}s, Speed: ${speedInMbps.toFixed(2)} Mbps`);
+    console.log(`Download completed: ${(bytesRead / 1024).toFixed(2)} KB in ${duration.toFixed(2)}s, Speed: ${speedInMbps.toFixed(2)} Mbps`);
     
     return NextResponse.json({ speed: speedInMbps });
   } catch (error) {

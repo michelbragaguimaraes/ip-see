@@ -69,12 +69,16 @@ async function measureDownloadSpeed(
     const totalBytes = contentLength ? parseInt(contentLength, 10) : 100 * 1024 * 1024; // Default to 100MB if not specified
     let downloadedBytes = 0;
     let startTime = performance.now();
-    let lastProgressUpdate = 0;
+    let lastProgressTime = startTime;
+    let lastBytesRead = 0;
 
     const reader = response.body?.getReader();
     if (!reader) {
       throw new Error('Failed to get response reader');
     }
+
+    // Start progress at 0%
+    onProgress?.(0, 0);
 
     while (true) {
       const { done, value } = await reader.read();
@@ -88,20 +92,22 @@ async function measureDownloadSpeed(
       // Update progress
       const progress = Math.min(100, (downloadedBytes / totalBytes) * 100);
       const currentTime = performance.now();
+      const timeDiff = currentTime - lastProgressTime;
       
-      // Update progress every 0.25% or every 25ms
-      if (progress - lastProgressUpdate >= 0.25 || currentTime - startTime >= 25) {
-        const elapsed = (currentTime - startTime) / 1000; // in seconds
-        const currentSpeed = (downloadedBytes * 8) / (1024 * 1024 * elapsed); // in Mbps
+      // Update progress every 100ms
+      if (timeDiff >= 100) {
+        const bytesDiff = downloadedBytes - lastBytesRead;
+        const currentSpeed = (bytesDiff * 8) / (timeDiff / 1000) / (1024 * 1024); // Mbps
         
         onProgress?.(progress, currentSpeed);
-        lastProgressUpdate = progress;
-        startTime = currentTime;
         
         // Log progress every 10MB
         if (downloadedBytes % (10 * 1024 * 1024) < value.length) {
           console.log(`Downloaded ${(downloadedBytes / (1024 * 1024)).toFixed(2)} MB (${progress.toFixed(1)}%) at ${currentSpeed.toFixed(2)} Mbps`);
         }
+        
+        lastProgressTime = currentTime;
+        lastBytesRead = downloadedBytes;
       }
     }
 

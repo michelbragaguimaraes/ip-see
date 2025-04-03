@@ -16,8 +16,8 @@ async function handleDownload(request: Request) {
   try {
     console.log('Starting download test');
     
-    // Use a reliable CDN for download test (1GB)
-    const url = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js';
+    // Use a reliable CDN for download test (100MB file)
+    const url = 'https://speed.hetzner.de/100MB.bin';
     
     console.log(`Fetching from: ${url}`);
     
@@ -53,7 +53,8 @@ async function handleDownload(request: Request) {
     }
     
     let bytesRead = 0;
-    let chunks = 0;
+    let lastProgressTime = Date.now();
+    let lastBytesRead = 0;
     
     // Read the stream
     while (true) {
@@ -62,18 +63,28 @@ async function handleDownload(request: Request) {
       if (done) break;
       
       bytesRead += value.length;
-      chunks++;
       
-      // Log progress every 10MB
-      if (bytesRead % (10 * 1024 * 1024) < value.length) {
-        console.log(`Downloaded ${(bytesRead / (1024 * 1024)).toFixed(2)} MB`);
+      // Calculate current speed every 100ms
+      const now = Date.now();
+      const timeDiff = now - lastProgressTime;
+      if (timeDiff >= 100) {
+        const bytesDiff = bytesRead - lastBytesRead;
+        const currentSpeed = (bytesDiff * 8) / (timeDiff / 1000) / (1024 * 1024); // Mbps
+        
+        // Log progress every 10MB
+        if (bytesRead % (10 * 1024 * 1024) < value.length) {
+          console.log(`Downloaded ${(bytesRead / (1024 * 1024)).toFixed(2)} MB, Current Speed: ${currentSpeed.toFixed(2)} Mbps`);
+        }
+        
+        lastProgressTime = now;
+        lastBytesRead = bytesRead;
       }
     }
     
     const endTime = Date.now();
     const duration = (endTime - startTime) / 1000; // in seconds
     
-    // Calculate speed in Mbps
+    // Calculate average speed in Mbps
     const speedInMbps = (bytesRead * 8) / (1024 * 1024 * duration);
     
     console.log(`Download completed: ${(bytesRead / (1024 * 1024)).toFixed(2)} MB in ${duration.toFixed(2)}s, Speed: ${speedInMbps.toFixed(2)} Mbps`);

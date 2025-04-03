@@ -58,17 +58,25 @@ async function measureDownloadSpeed(
     
     console.log(`Starting download from ${server.host} (${url})`);
     
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
     const response = await fetch(url, { 
-      cache: 'no-store'
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store',
+        'Pragma': 'no-cache'
+      },
+      signal: controller.signal
     });
+
+    clearTimeout(timeout);
 
     if (!response.ok || !response.body) {
       throw new Error(`Failed to start download: ${response.status} ${response.statusText}`);
     }
 
-    // For Cloudflare, we know the file size from the URL (1GB)
-    const fileSize = 1073741824; // 1GB
-    
+    const fileSize = 1073741824; // Exactly 1GB
     console.log(`File size: ${(fileSize / 1024 / 1024).toFixed(2)}MB`);
 
     const reader = response.body.getReader();
@@ -84,7 +92,7 @@ async function measureDownloadSpeed(
 
       downloadedSize += (value?.length || 0);
 
-      // Calculate and report progress
+      // Calculate progress and speed
       const progress = Math.min(100, (downloadedSize / fileSize) * 100);
       const currentTime = performance.now();
       const currentDuration = (currentTime - startTime) / 1000;
@@ -205,9 +213,8 @@ async function measureUploadSpeed(
   onProgress?: (progress: number, currentSpeed: number) => void
 ): Promise<number> {
   try {
-    // Use larger chunks for better performance
-    const chunkSize = 32 * 1024 * 1024; // 32MB chunks
-    const totalSize = 256 * 1024 * 1024; // 256MB total
+    const chunkSize = 8 * 1024 * 1024; // 8MB chunks for much smoother progress
+    const totalSize = 1073741824; // Exactly 1GB
     let uploadedSize = 0;
     const startTime = performance.now();
     let lastProgressUpdate = 0;
@@ -219,7 +226,7 @@ async function measureUploadSpeed(
     const chunk = new ArrayBuffer(chunkSize);
     const totalChunks = Math.ceil(totalSize / chunkSize);
     const uploadPromises = [];
-    const maxConcurrentUploads = 6; // Increase concurrent uploads
+    const maxConcurrentUploads = 8; // Increased to 8 for better throughput
 
     // Start multiple uploads in parallel for better throughput
     for (let i = 0; i < totalChunks; i++) {
@@ -239,22 +246,22 @@ async function measureUploadSpeed(
         const currentDuration = (currentTime - startTime) / 1000;
         const currentSpeed = ((uploadedSize * 8) / currentDuration) / 1000000;
 
-        // Report progress every 1% or every 100ms for speed
-        if (onProgress && (progress - lastProgressUpdate >= 1 || currentTime - lastSpeedUpdate >= 100)) {
+        // Report progress much more frequently (every 0.25% or every 25ms)
+        if (onProgress && (progress - lastProgressUpdate >= 0.25 || currentTime - lastSpeedUpdate >= 25)) {
           onProgress(progress, currentSpeed);
           lastProgressUpdate = progress;
           lastSpeedUpdate = currentTime;
         }
 
-        // Log progress every 64MB
-        if (uploadedSize % (64 * 1024 * 1024) === 0) {
+        // Log progress every 16MB
+        if (uploadedSize % (16 * 1024 * 1024) === 0) {
           console.log(`Upload Progress: ${Math.round(uploadedSize / 1024 / 1024)}MB (${progress.toFixed(1)}%), Current Speed: ${currentSpeed.toFixed(2)} Mbps`);
         }
       });
 
       uploadPromises.push(uploadPromise);
 
-      // Start uploads in larger batches
+      // Start uploads in smaller batches for smoother progress
       if (uploadPromises.length === maxConcurrentUploads || i === totalChunks - 1) {
         await Promise.all(uploadPromises);
         uploadPromises.length = 0;

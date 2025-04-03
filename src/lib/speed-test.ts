@@ -66,7 +66,7 @@ async function measureDownloadSpeed(
     }
 
     const contentLength = response.headers.get('Content-Length');
-    const totalBytes = contentLength ? parseInt(contentLength, 10) : 1073741824; // Default to 1GB if not specified
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 100 * 1024 * 1024; // Default to 100MB if not specified
     let downloadedBytes = 0;
     let startTime = performance.now();
     let lastProgressUpdate = 0;
@@ -98,8 +98,8 @@ async function measureDownloadSpeed(
         lastProgressUpdate = progress;
         startTime = currentTime;
         
-        // Log progress every 100MB
-        if (downloadedBytes % (100 * 1024 * 1024) < value.length) {
+        // Log progress every 10MB
+        if (downloadedBytes % (10 * 1024 * 1024) < value.length) {
           console.log(`Downloaded ${(downloadedBytes / (1024 * 1024)).toFixed(2)} MB (${progress.toFixed(1)}%) at ${currentSpeed.toFixed(2)} Mbps`);
         }
       }

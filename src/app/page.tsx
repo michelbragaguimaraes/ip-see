@@ -113,17 +113,6 @@ export default function Home() {
             </p>
           </div>
           
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">IP Information</h2>
-            <button 
-              onClick={refreshIPData}
-              disabled={isLoading}
-              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-            >
-              {isLoading ? 'Refreshing...' : 'Refresh IP'}
-            </button>
-          </div>
-          
           <div className="grid gap-8">
             <IpCard {...ipInfo} onRefresh={fetchIpInfo} isLoading={isLoading} />
             <SpeedTest 

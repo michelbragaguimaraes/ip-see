@@ -34,11 +34,11 @@ export interface SpeedTestServer {
 // List of available speed test servers
 export const speedTestServers: SpeedTestServer[] = [
   {
-    id: 'cloudflare',
-    host: 'Cloudflare',
+    id: 'fast',
+    host: 'Fast.com',
     location: 'Global',
     country: 'Global',
-    url: '/api/speed?type=download&bytes=1073741824',
+    url: '/api/speed?type=download',
     uploadUrl: '/api/speed?type=upload'
   }
 ];
@@ -49,85 +49,74 @@ async function measureDownloadSpeed(
   onProgress?: (progress: number, currentSpeed: number) => void
 ): Promise<number> {
   try {
-    const url = server.url;
-    let downloadedSize = 0;
-    const startTime = performance.now();
-    let endTime = startTime;
-    let lastProgressUpdate = 0;
-    let lastSpeedUpdate = 0;
+    console.log('Starting download test');
     
-    console.log(`Starting download from ${server.host} (${url})`);
-    
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-    const response = await fetch(url, { 
+    const response = await fetch(server.url, {
+      method: 'GET',
       cache: 'no-store',
       headers: {
-        'Cache-Control': 'no-cache, no-store',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache'
-      },
-      signal: controller.signal
+      }
     });
 
-    clearTimeout(timeout);
-
-    if (!response.ok || !response.body) {
-      throw new Error(`Failed to start download: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Download failed: ${response.status} ${errorText}`);
     }
 
-    const fileSize = 1073741824; // Exactly 1GB
-    console.log(`File size: ${(fileSize / 1024 / 1024).toFixed(2)}MB`);
+    const contentLength = response.headers.get('Content-Length');
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 1024 * 1024 * 1024; // Default to 1GB if not specified
+    let downloadedBytes = 0;
+    let startTime = performance.now();
+    let lastProgressUpdate = 0;
 
-    const reader = response.body.getReader();
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Failed to get response reader');
+    }
 
-    // Read the stream
     while (true) {
       const { done, value } = await reader.read();
-
+      
       if (done) {
-        endTime = performance.now();
         break;
       }
 
-      downloadedSize += (value?.length || 0);
-
-      // Calculate progress and speed
-      const progress = Math.min(100, (downloadedSize / fileSize) * 100);
+      downloadedBytes += value.length;
+      
+      // Update progress
+      const progress = Math.min(100, (downloadedBytes / totalBytes) * 100);
       const currentTime = performance.now();
-      const currentDuration = (currentTime - startTime) / 1000;
-      const currentSpeed = ((downloadedSize * 8) / currentDuration) / 1000000;
-
-      // Report progress every 1% or every 100ms for speed
-      if (onProgress && (progress - lastProgressUpdate >= 1 || currentTime - lastSpeedUpdate >= 100)) {
-        onProgress(progress, currentSpeed);
+      
+      // Update progress every 1% or every 100ms
+      if (progress - lastProgressUpdate >= 1 || currentTime - startTime >= 100) {
+        const elapsed = (currentTime - startTime) / 1000; // in seconds
+        const currentSpeed = (downloadedBytes * 8) / (1024 * 1024 * elapsed); // in Mbps
+        
+        onProgress?.(progress, currentSpeed);
         lastProgressUpdate = progress;
-        lastSpeedUpdate = currentTime;
-      }
-
-      // Log progress every 50MB
-      if (downloadedSize % (50 * 1024 * 1024) === 0) {
-        console.log(`Download Progress: ${Math.round(downloadedSize / 1024 / 1024)}MB (${progress.toFixed(1)}%), Current Speed: ${currentSpeed.toFixed(2)} Mbps`);
+        startTime = currentTime;
+        
+        // Log progress every 64MB
+        if (downloadedBytes % (64 * 1024 * 1024) < value.length) {
+          console.log(`Downloaded ${(downloadedBytes / (1024 * 1024)).toFixed(2)} MB (${progress.toFixed(1)}%) at ${currentSpeed.toFixed(2)} Mbps`);
+        }
       }
     }
 
-    reader.cancel();
+    const totalTime = (performance.now() - startTime) / 1000; // in seconds
+    const speedInMbps = (downloadedBytes * 8) / (1024 * 1024 * totalTime);
 
-    const durationInSeconds = (endTime - startTime) / 1000;
-    const downloadedBits = downloadedSize * 8;
-    const speedInMbps = (downloadedBits / durationInSeconds) / 1000000;
+    console.log(`Download completed: Speed: ${speedInMbps.toFixed(2)} Mbps`);
+    
+    // Ensure we report 100% progress at the end
+    onProgress?.(100, speedInMbps);
 
-    console.log(`Download completed: ${downloadedSize / 1024 / 1024}MB in ${durationInSeconds.toFixed(2)}s, Speed: ${speedInMbps.toFixed(2)} Mbps`);
-
-    // Ensure we show 100% at the end
-    if (onProgress) {
-      onProgress(100, speedInMbps);
-    }
-
-    return speedInMbps > 0 ? speedInMbps : 0;
+    return speedInMbps;
   } catch (error) {
     console.error('Download speed test error:', error);
-    return 0;
+    throw error;
   }
 }
 
@@ -136,75 +125,55 @@ async function measurePingAndJitter(
   server: SpeedTestServer,
   onProgress?: (progress: number, currentPing: number, currentJitter: number) => void
 ): Promise<{ ping: number; jitter: number }> {
-  const pings: number[] = [];
-  const jitters: number[] = [];
-  const testDuration = 3000; // 3 seconds
-  const startTime = performance.now();
-  let lastPing = 0;
-  let progress = 0;
-
-  console.log('Starting ping and jitter test...');
-
-  while (performance.now() - startTime < testDuration) {
-    const pingStartTime = performance.now();
-    try {
-      const response = await fetch('/api/speed?type=ping', { 
-        cache: 'no-store'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Ping failed: ${response.status} ${response.statusText}`);
-      }
-      
-      const pingTime = performance.now() - pingStartTime;
-      pings.push(pingTime);
-
-      // Calculate jitter only if we have a previous ping
-      if (lastPing > 0) {
-        const jitter = Math.abs(pingTime - lastPing);
-        jitters.push(jitter);
-      }
-      lastPing = pingTime;
-
-      // Calculate current averages
-      const currentPing = pings.reduce((a, b) => a + b, 0) / pings.length;
-      const currentJitter = jitters.length > 0 
-        ? jitters.reduce((a, b) => a + b, 0) / jitters.length 
-        : 0;
-
-      // Calculate progress (0-100)
-      progress = Math.min(100, ((performance.now() - startTime) / testDuration) * 100);
-
-      if (onProgress) {
-        onProgress(progress, currentPing, currentJitter);
-      }
-
-      console.log(`Ping: ${pingTime.toFixed(1)}ms, Jitter: ${jitters[jitters.length - 1]?.toFixed(1) || 0}ms`);
-
-      // Small delay between pings
-      await new Promise(resolve => setTimeout(resolve, 100));
-    } catch (error) {
-      console.error('Ping test error:', error);
-      // Add a failed ping attempt
-      pings.push(999);
+  try {
+    console.log('Starting ping test');
+    
+    const response = await fetch('/api/speed?type=ping', {
+      cache: 'no-store'
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Ping failed: ${response.status} ${response.statusText}`);
     }
+    
+    const data = await response.json();
+    
+    if (data.error) {
+      throw new Error(`Ping error: ${data.error}`);
+    }
+    
+    const ping = data.ping || 0;
+    const jitter = data.jitter || 0;
+    
+    console.log(`Ping: ${ping.toFixed(1)}ms, Jitter: ${jitter.toFixed(1)}ms`);
+    
+    // Simulate progress for UI
+    if (onProgress) {
+      // Start at 0%
+      onProgress(0, ping, jitter);
+      
+      // Simulate progress over 1 second
+      const startTime = performance.now();
+      const duration = 1000; // 1 second
+      
+      const interval = setInterval(() => {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(100, (elapsed / duration) * 100);
+        
+        onProgress(progress, ping, jitter);
+        
+        if (progress >= 100) {
+          clearInterval(interval);
+          onProgress(100, ping, jitter);
+        }
+      }, 50);
+    }
+    
+    return { ping, jitter };
+  } catch (error) {
+    console.error('Ping test error:', error);
+    throw error;
   }
-
-  // Calculate final averages
-  const avgPing = pings.reduce((a, b) => a + b, 0) / pings.length;
-  const avgJitter = jitters.length > 0 
-    ? jitters.reduce((a, b) => a + b, 0) / jitters.length 
-    : 0;
-
-  // Ensure we show 100% at the end
-  if (onProgress) {
-    onProgress(100, avgPing, avgJitter);
-  }
-
-  return {
-    ping: avgPing,
-    jitter: avgJitter
-  };
 }
 
 // Function to measure upload speed with progress callback
@@ -213,119 +182,158 @@ async function measureUploadSpeed(
   onProgress?: (progress: number, currentSpeed: number) => void
 ): Promise<number> {
   try {
-    const chunkSize = 8 * 1024 * 1024; // 8MB chunks for much smoother progress
-    const totalSize = 1073741824; // Exactly 1GB
-    let uploadedSize = 0;
-    const startTime = performance.now();
+    console.log('Starting upload test');
+    
+    // Create a test file to upload (1GB)
+    const chunkSize = 32 * 1024 * 1024; // 32MB chunks
+    const totalSize = 1024 * 1024 * 1024; // 1GB total
+    const numChunks = Math.ceil(totalSize / chunkSize);
+    
+    console.log(`Creating ${numChunks} chunks of ${chunkSize / (1024 * 1024)}MB each for a total of ${totalSize / (1024 * 1024 * 1024)}GB`);
+    
+    // Create a single chunk to upload
+    const chunk = new Uint8Array(chunkSize);
+    for (let i = 0; i < chunk.length; i++) {
+      chunk[i] = Math.floor(Math.random() * 256);
+    }
+    
+    // Upload the chunk multiple times to simulate a larger file
+    let totalUploaded = 0;
+    let startTime = performance.now();
     let lastProgressUpdate = 0;
-    let lastSpeedUpdate = 0;
-
-    console.log('Starting upload test...');
-
-    // Create a single large buffer for better performance
-    const chunk = new ArrayBuffer(chunkSize);
-    const totalChunks = Math.ceil(totalSize / chunkSize);
+    
+    // Upload in parallel for better throughput
+    const maxConcurrentUploads = 6;
     const uploadPromises = [];
-    const maxConcurrentUploads = 8; // Increased to 8 for better throughput
-
-    // Start multiple uploads in parallel for better throughput
-    for (let i = 0; i < totalChunks; i++) {
-      const uploadPromise = fetch(server.uploadUrl, {
-        method: 'POST',
-        body: chunk,
-        cache: 'no-store'
-      }).then(response => {
-        if (!response.ok) {
-          throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
-        }
-        uploadedSize += chunkSize;
-
-        // Calculate progress and speed
-        const progress = Math.min(100, (uploadedSize / totalSize) * 100);
-        const currentTime = performance.now();
-        const currentDuration = (currentTime - startTime) / 1000;
-        const currentSpeed = ((uploadedSize * 8) / currentDuration) / 1000000;
-
-        // Report progress much more frequently (every 0.25% or every 25ms)
-        if (onProgress && (progress - lastProgressUpdate >= 0.25 || currentTime - lastSpeedUpdate >= 25)) {
-          onProgress(progress, currentSpeed);
-          lastProgressUpdate = progress;
-          lastSpeedUpdate = currentTime;
-        }
-
-        // Log progress every 16MB
-        if (uploadedSize % (16 * 1024 * 1024) === 0) {
-          console.log(`Upload Progress: ${Math.round(uploadedSize / 1024 / 1024)}MB (${progress.toFixed(1)}%), Current Speed: ${currentSpeed.toFixed(2)} Mbps`);
-        }
-      });
-
-      uploadPromises.push(uploadPromise);
-
-      // Start uploads in smaller batches for smoother progress
-      if (uploadPromises.length === maxConcurrentUploads || i === totalChunks - 1) {
-        await Promise.all(uploadPromises);
-        uploadPromises.length = 0;
+    
+    for (let i = 0; i < numChunks; i += maxConcurrentUploads) {
+      const batchSize = Math.min(maxConcurrentUploads, numChunks - i);
+      const batchPromises = [];
+      
+      for (let j = 0; j < batchSize; j++) {
+        const promise = fetch(server.uploadUrl, {
+          method: 'POST',
+          body: chunk,
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          }
+        }).then(async (response) => {
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            throw new Error(`Upload failed: ${response.status} ${errorText}`);
+          }
+          
+          const data = await response.json();
+          if (data.error) {
+            throw new Error(`Upload error: ${data.error}`);
+          }
+          
+          totalUploaded += chunkSize;
+          
+          // Update progress
+          const progress = Math.min(100, (totalUploaded / totalSize) * 100);
+          const currentTime = performance.now();
+          
+          // Update progress every 1% or every 100ms
+          if (progress - lastProgressUpdate >= 1 || currentTime - startTime >= 100) {
+            const elapsed = (currentTime - startTime) / 1000; // in seconds
+            const currentSpeed = (totalUploaded * 8) / (1024 * 1024 * elapsed); // in Mbps
+            
+            onProgress?.(progress, currentSpeed);
+            lastProgressUpdate = progress;
+            startTime = currentTime;
+            
+            // Log progress every 64MB
+            if (totalUploaded % (64 * 1024 * 1024) < chunkSize) {
+              console.log(`Uploaded ${(totalUploaded / (1024 * 1024)).toFixed(2)} MB (${progress.toFixed(1)}%) at ${currentSpeed.toFixed(2)} Mbps`);
+            }
+          }
+          
+          return data.speed || 0;
+        });
+        
+        batchPromises.push(promise);
       }
+      
+      // Wait for the current batch to complete before starting the next batch
+      const batchResults = await Promise.all(batchPromises);
+      uploadPromises.push(...batchResults);
     }
-
-    const endTime = performance.now();
-    const durationInSeconds = (endTime - startTime) / 1000;
-    const uploadedBits = uploadedSize * 8;
-    const speedInMbps = (uploadedBits / durationInSeconds) / 1000000;
-
-    console.log(`Upload completed: ${uploadedSize / 1024 / 1024}MB in ${durationInSeconds.toFixed(2)}s, Speed: ${speedInMbps.toFixed(2)} Mbps`);
-
-    // Ensure we show 100% at the end
-    if (onProgress) {
-      onProgress(100, speedInMbps);
-    }
-
-    return speedInMbps > 0 ? speedInMbps : 0;
+    
+    // Calculate average speed from all uploads
+    const speeds = await Promise.all(uploadPromises);
+    const avgSpeed = speeds.reduce((sum, speed) => sum + speed, 0) / speeds.length;
+    
+    console.log(`Upload completed: Average speed: ${avgSpeed.toFixed(2)} Mbps`);
+    
+    // Ensure we report 100% progress at the end
+    onProgress?.(100, avgSpeed);
+    
+    return avgSpeed;
   } catch (error) {
     console.error('Upload speed test error:', error);
-    return 0;
+    throw error;
   }
 }
 
 async function getServerInfo(): Promise<{ host: string; location: string; country: string }> {
   return {
-    host: 'Cloudflare',
+    host: 'Fast.com',
     location: 'Global',
     country: 'Global'
   };
 }
 
 export async function runSpeedTest(
-  selectedServerId: string = 'cloudflare',
+  selectedServerId: string = 'fast',
   onProgress?: (type: 'download' | 'upload' | 'ping', progress: number, currentSpeed: number, currentPing?: number, currentJitter?: number) => void
 ): Promise<SpeedTestResult> {
-  const server = speedTestServers.find(s => s.id === selectedServerId) || speedTestServers[0];
-  
-  // Measure ping and jitter first
-  const { ping, jitter } = await measurePingAndJitter(server, (progress, currentPing, currentJitter) => {
-    onProgress?.('ping', progress, 0, currentPing, currentJitter);
-  });
+  try {
+    const server = speedTestServers.find(s => s.id === selectedServerId) || speedTestServers[0];
+    
+    // Measure ping and jitter first
+    const { ping, jitter } = await measurePingAndJitter(server, (progress, currentPing, currentJitter) => {
+      onProgress?.('ping', progress, 0, currentPing, currentJitter);
+    });
 
-  // Then measure download speed
-  const download = await measureDownloadSpeed(server, (progress, currentSpeed) => {
-    onProgress?.('download', progress, currentSpeed);
-  });
+    // Then measure download speed
+    const download = await measureDownloadSpeed(server, (progress, currentSpeed) => {
+      onProgress?.('download', progress, currentSpeed);
+    });
 
-  // Finally measure upload speed
-  const upload = await measureUploadSpeed(server, (progress, currentSpeed) => {
-    onProgress?.('upload', progress, currentSpeed);
-  });
+    // Finally measure upload speed
+    const upload = await measureUploadSpeed(server, (progress, currentSpeed) => {
+      onProgress?.('upload', progress, currentSpeed);
+    });
 
-  return {
-    download,
-    upload,
-    ping,
-    jitter,
-    server: {
-      host: server.host,
-      location: server.location,
-      country: server.country,
-      id: server.id
-    }
-  };
+    // Get server info
+    const serverInfo = await getServerInfo();
+
+    return {
+      download,
+      upload,
+      ping,
+      jitter,
+      server: {
+        ...serverInfo,
+        id: server.id
+      },
+      progress: {
+        download: 100,
+        upload: 100,
+        ping: 100
+      },
+      currentSpeed: {
+        download,
+        upload
+      },
+      currentPing: ping,
+      currentJitter: jitter
+    };
+  } catch (error) {
+    console.error('Speed test error:', error);
+    throw error;
+  }
 } 

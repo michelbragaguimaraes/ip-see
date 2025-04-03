@@ -56,10 +56,10 @@ async function measureDownloadSpeed(
     let lastProgressTime = startTime;
     let lastBytesRead = 0;
     let speedSamples: number[] = [];
-    let totalChunks = 50; // We'll get this from the first response
-    const chunkSize = 1024 * 1024; // 1MB chunks
+    let totalChunks = 800; // We'll get this from the first response (800 chunks * 64KB = 50MB)
+    const chunkSize = 64 * 1024; // 64KB chunks
     const totalSize = totalChunks * chunkSize;
-    const maxConcurrentDownloads = 3; // Number of parallel downloads
+    const maxConcurrentDownloads = 6; // Increased parallel downloads since chunks are smaller
 
     // Start progress at 0%
     onProgress?.(0, 0);
@@ -104,8 +104,8 @@ async function measureDownloadSpeed(
         const currentTime = performance.now();
         const timeDiff = currentTime - lastProgressTime;
 
-        // Calculate speed every 100ms
-        if (timeDiff >= 100) {
+        // Calculate speed every 50ms for smoother updates
+        if (timeDiff >= 50) {
           const bytesDiff = downloadedBytes - lastBytesRead;
           const currentSpeed = (bytesDiff * 8) / (timeDiff / 1000) / (1024 * 1024); // Mbps
           speedSamples.push(currentSpeed);

@@ -20,8 +20,8 @@ async function handleDownload(request: Request) {
     const url = new URL(request.url);
     const chunkNumber = parseInt(url.searchParams.get('chunk') || '0', 10);
     
-    // Generate a chunk of data (1MB per chunk)
-    const chunkSize = 1024 * 1024; // 1MB chunks
+    // Generate a chunk of data (64KB per chunk to stay within Netlify limits)
+    const chunkSize = 64 * 1024; // 64KB chunks
     const chunk = new Uint8Array(chunkSize);
     crypto.getRandomValues(chunk);
     
@@ -30,7 +30,7 @@ async function handleDownload(request: Request) {
       headers: {
         'Content-Type': 'application/octet-stream',
         'Content-Length': chunkSize.toString(),
-        'X-Total-Chunks': '50', // Total number of chunks (50MB total)
+        'X-Total-Chunks': '800', // Total number of chunks (50MB total = 800 * 64KB)
         'X-Chunk-Number': chunkNumber.toString(),
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         'Pragma': 'no-cache',

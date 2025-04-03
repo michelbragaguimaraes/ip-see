@@ -13,8 +13,8 @@ interface IpInfo {
 
 export async function getIpInfo(): Promise<IpInfo> {
   try {
-    // Use ipinfo.io which provides all data in a single call
-    const response = await axios.get('https://ipinfo.io/json');
+    // Use our server-side API endpoint instead of calling ipinfo.io directly
+    const response = await axios.get('/api/ip');
     return response.data;
   } catch (error) {
     console.error('Error fetching IP info:', error);

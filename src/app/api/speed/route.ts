@@ -1,179 +1,125 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-// Disable body size limits for this API route
-export const config = {
-  api: {
-    bodyParser: false,
-    responseLimit: false,
-  },
+const CLOUDFLARE_SPEED_TEST = {
+  PING: 'https://speed.cloudflare.com/__ping',
+  DOWNLOAD: 'https://speed.cloudflare.com/__down',
+  UPLOAD: 'https://speed.cloudflare.com/__up'
 };
 
 export const dynamic = 'force-dynamic';
-export const fetchCache = 'force-no-store';
+export const runtime = 'edge';
 
-// Function to handle download requests
-async function handleDownload(request: Request) {
+// Function to generate random data
+function generateRandomData(size: number): Uint8Array {
+  const data = new Uint8Array(size);
+  const chunkSize = 65536; // 64KB chunks for better performance
+  const chunk = new Uint8Array(chunkSize);
+  
+  // Generate one chunk of random data and reuse it
+  for (let i = 0; i < chunkSize; i++) {
+    chunk[i] = Math.floor(Math.random() * 256);
+  }
+  
+  // Copy the chunk multiple times
+  for (let offset = 0; offset < size; offset += chunkSize) {
+    const slice = Math.min(chunkSize, size - offset);
+    data.set(chunk.slice(0, slice), offset);
+  }
+  
+  return data;
+}
+
+// Handle download request
+export async function GET(request: NextRequest) {
   try {
-    console.log('Starting download test');
+    const searchParams = request.nextUrl.searchParams;
+    const type = searchParams.get('type');
     
-    // Get the requested size from the URL
-    const url = new URL(request.url);
-    const requestedSize = parseInt(url.searchParams.get('size') || '104857600', 10); // Default to 100MB
-    
-    // Create a ReadableStream to stream the data
-    const stream = new ReadableStream({
-      async start(controller) {
-        let totalSent = 0;
-        const chunkSize = 64 * 1024; // 64KB chunks
-        
-        while (totalSent < requestedSize) {
-          const remainingSize = requestedSize - totalSent;
-          const currentChunkSize = Math.min(chunkSize, remainingSize);
-          const chunk = new Uint8Array(currentChunkSize);
-          crypto.getRandomValues(chunk);
-          controller.enqueue(chunk);
-          totalSent += currentChunkSize;
-          
-          // Small delay to prevent overwhelming the connection
-          await new Promise(resolve => setTimeout(resolve, 1));
+    if (type === 'ping') {
+      // Ping test - just return current timestamp
+      return NextResponse.json({ ping: 0 }, { 
+        status: 200,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Access-Control-Allow-Origin': '*'
         }
-        
-        controller.close();
+      });
+    } else if (type === 'download') {
+      // Download test - generate random data
+      const requestedBytes = searchParams.get('bytes');
+      if (!requestedBytes) {
+        return NextResponse.json({ error: 'Missing bytes parameter' }, { status: 400 });
       }
-    });
+
+      const bytes = parseInt(requestedBytes, 10);
+      if (isNaN(bytes) || bytes <= 0) {
+        return NextResponse.json({ error: 'Invalid bytes parameter' }, { status: 400 });
+      }
+
+      // Cap at 8MB per request to prevent memory issues
+      const size = Math.min(bytes, 8 * 1024 * 1024);
+      console.log(`Generating ${size} bytes of data`); // Debug log
+      
+      const data = generateRandomData(size);
+      console.log(`Generated data of size ${data.length}`); // Debug log
+      
+      return new NextResponse(data, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': size.toString(),
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Pragma': 'no-cache',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'Content-Length'
+        }
+      });
+    }
     
-    // Return the stream with appropriate headers
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'Content-Length': requestedSize.toString(),
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': '*'
-      }
-    });
+    return NextResponse.json({ error: 'Invalid request type' }, { status: 400 });
   } catch (error) {
-    console.error('Download error:', error);
-    return NextResponse.json(
-      { error: 'Download failed', details: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
-    );
+    console.error('Speed test error:', error);
+    return NextResponse.json({ 
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 });
   }
 }
 
-// Function to handle upload requests
-async function handleUpload(request: Request) {
+// Handle upload request
+export async function POST(request: NextRequest) {
   try {
-    console.log('Starting upload test');
+    const data = await request.arrayBuffer();
     
-    const startTime = Date.now();
-    
-    // Get the request body as an ArrayBuffer
-    const body = await request.arrayBuffer();
-    const endTime = Date.now();
-    
-    // Calculate actual upload speed based on the time it took to receive the data
-    const duration = Math.max(0.001, (endTime - startTime) / 1000); // in seconds, minimum 0.001s
-    const speedInMbps = (body.byteLength * 8) / (1024 * 1024 * duration);
-    
-    console.log(`Upload completed: ${(body.byteLength / (1024 * 1024)).toFixed(2)} MB in ${duration.toFixed(2)}s, Speed: ${speedInMbps.toFixed(2)} Mbps`);
-    
+    // Return success response immediately
     return NextResponse.json({ 
-      speed: speedInMbps,
-      size: body.byteLength,
-      duration: duration
+      success: true,
+      size: data.byteLength
+    }, { 
+      status: 200,
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Access-Control-Allow-Origin': '*'
+      }
     });
   } catch (error) {
     console.error('Upload error:', error);
-    return NextResponse.json(
-      { error: 'Upload failed', details: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ 
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 });
   }
 }
 
-// Function to handle ping requests
-async function handlePing(request: Request) {
-  try {
-    console.log('Starting ping test');
-    
-    // Use a simple ping test with a small file
-    const startTime = Date.now();
-    
-    const response = await fetch('https://www.google.com/favicon.ico', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': '*/*',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      },
-      cache: 'no-store',
-      next: { revalidate: 0 }
-    });
-
-    if (!response.ok) {
-      console.error(`Ping test failed with status: ${response.status}`);
-      return NextResponse.json(
-        { error: `Ping test failed: ${response.status}` },
-        { status: response.status }
-      );
+// Handle preflight requests
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '86400'
     }
-
-    // Consume the response body
-    await response.arrayBuffer();
-    
-    const pingTime = Date.now() - startTime;
-    
-    console.log(`Ping completed in ${pingTime}ms`);
-    
-    // Calculate jitter (simplified)
-    const jitter = Math.random() * 5; // Simulate jitter between 0-5ms
-    
-    return NextResponse.json({ ping: pingTime, jitter });
-  } catch (error) {
-    console.error('Ping test error:', error);
-    return NextResponse.json(
-      { error: 'Ping test failed', details: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
-    );
-  }
-}
-
-// Main handler
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const type = url.searchParams.get('type');
-  
-  console.log(`Speed test request: ${type}`);
-  
-  if (type === 'download') {
-    return handleDownload(request);
-  } else if (type === 'ping') {
-    return handlePing(request);
-  } else {
-    return NextResponse.json(
-      { error: 'Invalid test type' },
-      { status: 400 }
-    );
-  }
-}
-
-export async function POST(request: Request) {
-  const url = new URL(request.url);
-  const type = url.searchParams.get('type');
-  
-  console.log(`Speed test POST request: ${type}`);
-  
-  if (type === 'upload') {
-    return handleUpload(request);
-  } else {
-    return NextResponse.json(
-      { error: 'Invalid test type' },
-      { status: 400 }
-    );
-  }
+  });
 } 

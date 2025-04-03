@@ -9,6 +9,7 @@ import { Toaster } from 'sonner';
 import { toast } from 'sonner';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
+import { AdSense } from '@/components/AdSense';
 
 export default function Home() {
   const [ipInfo, setIpInfo] = useState({
@@ -118,6 +119,14 @@ export default function Home() {
       <Header />
       <main className="flex-1 py-8 px-4">
         <div className="container mx-auto max-w-4xl space-y-8">
+          {/* Top ad */}
+          <div className="w-full">
+            <AdSense
+              adSlot="1234567890" // Replace with your actual ad slot ID
+              className="mb-8"
+            />
+          </div>
+
           <div className="text-center space-y-4">
             <h2 className="text-3xl font-bold tracking-tight">
               Check Your IP & Network Status
@@ -140,10 +149,23 @@ export default function Home() {
           
           <div className="grid gap-8">
             <IpCard {...ipInfo} onRefresh={fetchIpInfo} isLoading={isLoading} />
+            
+            {/* Middle ad */}
+            <AdSense
+              adSlot="0987654321" // Replace with your actual ad slot ID
+              className="my-8"
+            />
+            
             <SpeedTest 
               result={speedTestResult} 
               onRunTest={runSpeedTestHandler} 
               isLoading={isSpeedTestLoading} 
+            />
+            
+            {/* Bottom ad */}
+            <AdSense
+              adSlot="5432109876" // Replace with your actual ad slot ID
+              className="mt-8"
             />
           </div>
         </div>

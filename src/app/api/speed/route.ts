@@ -16,8 +16,8 @@ async function handleDownload(request: Request) {
   try {
     console.log('Starting download test');
     
-    // Use a reliable CDN for download test
-    const url = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js';
+    // Use a reliable CDN for download test (1GB)
+    const url = 'https://speed.cloudflare.com/__down?bytes=1073741824';
     
     console.log(`Fetching from: ${url}`);
     
@@ -44,7 +44,7 @@ async function handleDownload(request: Request) {
 
     // Get the content length
     const contentLength = response.headers.get('Content-Length');
-    const totalBytes = contentLength ? parseInt(contentLength, 10) : 100 * 1024 * 1024; // Default to 100MB if not provided
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 1073741824; // Default to 1GB if not provided
     
     // Read the response as a stream
     const reader = response.body?.getReader();
@@ -64,8 +64,8 @@ async function handleDownload(request: Request) {
       bytesRead += value.length;
       chunks++;
       
-      // Log progress every 10MB
-      if (bytesRead % (10 * 1024 * 1024) < value.length) {
+      // Log progress every 100MB
+      if (bytesRead % (100 * 1024 * 1024) < value.length) {
         console.log(`Downloaded ${(bytesRead / (1024 * 1024)).toFixed(2)} MB`);
       }
     }

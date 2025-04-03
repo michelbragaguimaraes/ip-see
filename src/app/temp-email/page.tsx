@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Copy, RefreshCw, Mail, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast, Toaster } from "sonner";
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { tempEmailService, Email } from '@/services/temp-email';
@@ -98,6 +98,7 @@ export default function TempEmailPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      <Toaster />
       <Header />
       <main className="flex-1 py-8 px-4">
         <div className="container mx-auto max-w-4xl space-y-8">

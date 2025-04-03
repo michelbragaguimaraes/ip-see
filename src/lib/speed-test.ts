@@ -128,8 +128,15 @@ async function measurePingAndJitter(
   try {
     console.log('Starting ping test');
     
+    // Start progress at 0%
+    onProgress?.(0, 0, 0);
+    
     const response = await fetch('/api/speed?type=ping', {
-      cache: 'no-store'
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
     });
     
     if (!response.ok) {

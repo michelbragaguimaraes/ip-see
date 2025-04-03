@@ -145,13 +145,13 @@ async function handlePing(request: Request) {
   try {
     console.log('Starting ping test');
     
-    // Use Cloudflare's ping endpoint
+    // Use a simple ping test with a small file
     const startTime = Date.now();
     
-    const response = await fetch('https://speed.cloudflare.com/__ping', {
+    const response = await fetch('https://speed.cloudflare.com/__down?bytes=1024', {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'application/json',
+        'Accept': '*/*',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0'
@@ -168,7 +168,9 @@ async function handlePing(request: Request) {
       );
     }
 
-    const data = await response.json();
+    // Consume the response body
+    await response.arrayBuffer();
+    
     const pingTime = Date.now() - startTime;
     
     console.log(`Ping completed in ${pingTime}ms`);

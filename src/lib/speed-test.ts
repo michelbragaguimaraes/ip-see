@@ -205,8 +205,9 @@ async function measureUploadSpeed(
   onProgress?: (progress: number, currentSpeed: number) => void
 ): Promise<number> {
   try {
-    const chunkSize = 1024 * 1024; // 1MB chunks
-    const totalSize = 100 * 1024 * 1024; // 100MB total
+    // Use larger chunks for better performance
+    const chunkSize = 16 * 1024 * 1024; // 16MB chunks
+    const totalSize = 128 * 1024 * 1024; // 128MB total
     let uploadedSize = 0;
     const startTime = performance.now();
     let lastProgressUpdate = 0;
@@ -214,37 +215,48 @@ async function measureUploadSpeed(
 
     console.log('Starting upload test...');
 
-    while (uploadedSize < totalSize) {
-      const chunk = new ArrayBuffer(Math.min(chunkSize, totalSize - uploadedSize));
-      
-      const response = await fetch(server.uploadUrl, {
+    // Create a single large buffer for better performance
+    const chunk = new ArrayBuffer(chunkSize);
+    const totalChunks = Math.ceil(totalSize / chunkSize);
+    const uploadPromises = [];
+
+    // Start multiple uploads in parallel for better throughput
+    for (let i = 0; i < totalChunks; i++) {
+      const uploadPromise = fetch(server.uploadUrl, {
         method: 'POST',
         body: chunk,
         cache: 'no-store'
+      }).then(response => {
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+        }
+        uploadedSize += chunkSize;
+
+        // Calculate progress and speed
+        const progress = Math.min(100, (uploadedSize / totalSize) * 100);
+        const currentTime = performance.now();
+        const currentDuration = (currentTime - startTime) / 1000;
+        const currentSpeed = ((uploadedSize * 8) / currentDuration) / 1000000;
+
+        // Report progress every 1% or every 100ms for speed
+        if (onProgress && (progress - lastProgressUpdate >= 1 || currentTime - lastSpeedUpdate >= 100)) {
+          onProgress(progress, currentSpeed);
+          lastProgressUpdate = progress;
+          lastSpeedUpdate = currentTime;
+        }
+
+        // Log progress every 32MB
+        if (uploadedSize % (32 * 1024 * 1024) === 0) {
+          console.log(`Upload Progress: ${Math.round(uploadedSize / 1024 / 1024)}MB (${progress.toFixed(1)}%), Current Speed: ${currentSpeed.toFixed(2)} Mbps`);
+        }
       });
 
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
-      }
+      uploadPromises.push(uploadPromise);
 
-      uploadedSize += chunkSize;
-
-      // Calculate progress and speed
-      const progress = Math.min(100, (uploadedSize / totalSize) * 100);
-      const currentTime = performance.now();
-      const currentDuration = (currentTime - startTime) / 1000;
-      const currentSpeed = ((uploadedSize * 8) / currentDuration) / 1000000;
-
-      // Report progress every 1% or every 100ms for speed
-      if (onProgress && (progress - lastProgressUpdate >= 1 || currentTime - lastSpeedUpdate >= 100)) {
-        onProgress(progress, currentSpeed);
-        lastProgressUpdate = progress;
-        lastSpeedUpdate = currentTime;
-      }
-
-      // Log progress every 10MB
-      if (uploadedSize % (10 * 1024 * 1024) === 0) {
-        console.log(`Upload Progress: ${Math.round(uploadedSize / 1024 / 1024)}MB (${progress.toFixed(1)}%), Current Speed: ${currentSpeed.toFixed(2)} Mbps`);
+      // Start uploads in batches of 4 for better control
+      if (uploadPromises.length === 4 || i === totalChunks - 1) {
+        await Promise.all(uploadPromises);
+        uploadPromises.length = 0;
       }
     }
 

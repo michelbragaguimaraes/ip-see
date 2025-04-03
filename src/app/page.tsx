@@ -97,18 +97,6 @@ export default function Home() {
 
   useEffect(() => {
     fetchIpInfo();
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchIpInfo();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
   }, []);
 
   return (
@@ -123,6 +111,17 @@ export default function Home() {
             <p className="text-muted-foreground max-w-[600px] mx-auto">
               Get detailed information about your IP address, location, and network performance with our comprehensive tools.
             </p>
+          </div>
+          
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">IP Information</h2>
+            <button 
+              onClick={refreshIPData}
+              disabled={isLoading}
+              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+            >
+              {isLoading ? 'Refreshing...' : 'Refresh IP'}
+            </button>
           </div>
           
           <div className="grid gap-8">

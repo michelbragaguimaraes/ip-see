@@ -19,6 +19,9 @@ export function Header() {
             <Link href="/tools" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Tools
             </Link>
+            <Link href="/temp-email" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              Temp Email
+            </Link>
           </nav>
         </div>
         <div className="flex items-center space-x-4">

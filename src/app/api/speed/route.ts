@@ -16,44 +16,22 @@ async function handleDownload(request: Request) {
   try {
     console.log('Starting download test');
     
-    // Generate a large file (100MB) of random data
-    const chunkSize = 1024 * 1024; // 1MB chunks
-    const totalSize = 100 * chunkSize; // 100MB total
+    // Get the chunk number from the URL
+    const url = new URL(request.url);
+    const chunkNumber = parseInt(url.searchParams.get('chunk') || '0', 10);
     
-    // Create a ReadableStream that generates random data
-    const stream = new ReadableStream({
-      start(controller) {
-        let bytesGenerated = 0;
-        
-        function pushChunk() {
-          if (bytesGenerated >= totalSize) {
-            controller.close();
-            return;
-          }
-          
-          const remainingBytes = totalSize - bytesGenerated;
-          const currentChunkSize = Math.min(chunkSize, remainingBytes);
-          const chunk = new Uint8Array(currentChunkSize);
-          
-          // Fill with random data
-          crypto.getRandomValues(chunk);
-          
-          controller.enqueue(chunk);
-          bytesGenerated += currentChunkSize;
-          
-          // Schedule next chunk
-          setTimeout(pushChunk, 0);
-        }
-        
-        pushChunk();
-      }
-    });
-
-    // Return the stream with appropriate headers
-    return new Response(stream, {
+    // Generate a chunk of data (64KB per chunk)
+    const chunkSize = 64 * 1024; // 64KB chunks to stay within Netlify limits
+    const chunk = new Uint8Array(chunkSize);
+    crypto.getRandomValues(chunk);
+    
+    // Return the chunk with appropriate headers
+    return new Response(chunk, {
       headers: {
         'Content-Type': 'application/octet-stream',
-        'Content-Length': totalSize.toString(),
+        'Content-Length': chunkSize.toString(),
+        'X-Total-Chunks': '100', // Total number of chunks available
+        'X-Chunk-Number': chunkNumber.toString(),
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0'

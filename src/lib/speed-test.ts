@@ -51,45 +51,42 @@ async function measureDownloadSpeed(
   try {
     console.log('Starting download test');
     
-    const response = await fetch(server.url + '&t=' + new Date().getTime(), {
-      method: 'GET',
-      cache: 'no-store'
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
-      throw new Error(`Download failed: ${response.status} ${errorText}`);
-    }
-
-    const contentLength = response.headers.get('Content-Length');
-    const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-    
-    if (!totalBytes) {
-      throw new Error('Could not determine file size');
-    }
-
     let downloadedBytes = 0;
     let startTime = performance.now();
     let lastProgressTime = startTime;
     let lastBytesRead = 0;
     let speedSamples: number[] = [];
+    let totalChunks = 100; // We'll get this from the first response
+    const chunkSize = 64 * 1024; // 64KB chunks
+    const totalSize = totalChunks * chunkSize;
 
     // Start progress at 0%
     onProgress?.(0, 0);
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('Failed to get response reader');
-    }
+    // Download chunks in sequence
+    for (let chunkNumber = 0; chunkNumber < totalChunks; chunkNumber++) {
+      const response = await fetch(`${server.url}&chunk=${chunkNumber}&t=${new Date().getTime()}`, {
+        method: 'GET',
+        cache: 'no-store'
+      });
 
-    // Read the stream in chunks
-    while (true) {
-      const { done, value } = await reader.read();
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Download failed: ${response.status} ${errorText}`);
+      }
+
+      // Update total chunks from the first response
+      if (chunkNumber === 0) {
+        const totalChunksHeader = response.headers.get('X-Total-Chunks');
+        if (totalChunksHeader) {
+          totalChunks = parseInt(totalChunksHeader, 10);
+        }
+      }
+
+      const chunk = await response.arrayBuffer();
+      downloadedBytes += chunk.byteLength;
       
-      if (done) break;
-      
-      downloadedBytes += value.length;
-      const progress = (downloadedBytes / totalBytes) * 100;
+      const progress = (downloadedBytes / totalSize) * 100;
       const currentTime = performance.now();
       const timeDiff = currentTime - lastProgressTime;
 

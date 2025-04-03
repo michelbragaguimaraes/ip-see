@@ -103,8 +103,15 @@ async function handleUpload(request: Request) {
     
     // Simulate processing time based on the size of the upload
     // This gives a more realistic speed test experience
-    const simulatedProcessingTime = Math.min(3000, Math.max(500, body.byteLength / (1024 * 1024) * 30));
-    await new Promise(resolve => setTimeout(resolve, simulatedProcessingTime));
+    const simulatedProcessingTime = Math.min(2000, Math.max(300, body.byteLength / (1024 * 1024) * 20));
+    
+    // Split the processing time into smaller chunks to make it feel more responsive
+    const chunkTime = 50; // 50ms chunks
+    const numChunks = Math.ceil(simulatedProcessingTime / chunkTime);
+    
+    for (let i = 0; i < numChunks; i++) {
+      await new Promise(resolve => setTimeout(resolve, chunkTime));
+    }
     
     const endTime = Date.now();
     const duration = (endTime - startTime) / 1000; // in seconds

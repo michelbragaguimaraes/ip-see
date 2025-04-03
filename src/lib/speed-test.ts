@@ -192,7 +192,7 @@ async function measureUploadSpeed(
     console.log('Starting upload test');
     
     // Create a test file to upload (25MB)
-    const chunkSize = 2 * 1024 * 1024; // 2MB chunks
+    const chunkSize = 1 * 1024 * 1024; // 1MB chunks
     const totalSize = 25 * 1024 * 1024; // 25MB total
     const numChunks = Math.ceil(totalSize / chunkSize);
     
@@ -210,8 +210,11 @@ async function measureUploadSpeed(
     let lastProgressUpdate = 0;
     
     // Upload in parallel for better throughput
-    const maxConcurrentUploads = 2;
+    const maxConcurrentUploads = 3;
     const uploadPromises = [];
+    
+    // Start progress at 0%
+    onProgress?.(0, 0);
     
     for (let i = 0; i < numChunks; i += maxConcurrentUploads) {
       const batchSize = Math.min(maxConcurrentUploads, numChunks - i);
@@ -243,8 +246,8 @@ async function measureUploadSpeed(
           const progress = Math.min(100, (totalUploaded / totalSize) * 100);
           const currentTime = performance.now();
           
-          // Update progress every 1% or every 100ms
-          if (progress - lastProgressUpdate >= 1 || currentTime - startTime >= 100) {
+          // Update progress every 0.25% or every 25ms
+          if (progress - lastProgressUpdate >= 0.25 || currentTime - startTime >= 25) {
             const elapsed = (currentTime - startTime) / 1000; // in seconds
             const currentSpeed = (totalUploaded * 8) / (1024 * 1024 * elapsed); // in Mbps
             
@@ -252,8 +255,8 @@ async function measureUploadSpeed(
             lastProgressUpdate = progress;
             startTime = currentTime;
             
-            // Log progress every 4MB
-            if (totalUploaded % (4 * 1024 * 1024) < chunkSize) {
+            // Log progress every 2MB
+            if (totalUploaded % (2 * 1024 * 1024) < chunkSize) {
               console.log(`Uploaded ${(totalUploaded / (1024 * 1024)).toFixed(2)} MB (${progress.toFixed(1)}%) at ${currentSpeed.toFixed(2)} Mbps`);
             }
           }

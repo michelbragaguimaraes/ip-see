@@ -16,8 +16,8 @@ async function handleDownload(request: Request) {
   try {
     console.log('Starting download test');
     
-    // Use Cloudflare's speed test endpoint
-    const url = 'https://speed.cloudflare.com/__down?bytes=1073741824'; // 1GB
+    // Use a reliable CDN for download test
+    const url = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js';
     
     console.log(`Fetching from: ${url}`);
     
@@ -44,7 +44,7 @@ async function handleDownload(request: Request) {
 
     // Get the content length
     const contentLength = response.headers.get('Content-Length');
-    const totalBytes = contentLength ? parseInt(contentLength, 10) : 1073741824; // Default to 1GB if not provided
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 100 * 1024 * 1024; // Default to 100MB if not provided
     
     // Read the response as a stream
     const reader = response.body?.getReader();
@@ -64,8 +64,8 @@ async function handleDownload(request: Request) {
       bytesRead += value.length;
       chunks++;
       
-      // Log progress every 100MB
-      if (bytesRead % (100 * 1024 * 1024) < value.length) {
+      // Log progress every 10MB
+      if (bytesRead % (10 * 1024 * 1024) < value.length) {
         console.log(`Downloaded ${(bytesRead / (1024 * 1024)).toFixed(2)} MB`);
       }
     }
@@ -97,10 +97,11 @@ async function handleUpload(request: Request) {
     const body = await request.arrayBuffer();
     console.log(`Received upload body of size: ${(body.byteLength / (1024 * 1024)).toFixed(2)} MB`);
     
-    // Use Cloudflare's upload endpoint
+    // Use a test endpoint that accepts uploads
     const startTime = Date.now();
     
-    const response = await fetch('https://speed.cloudflare.com/__up', {
+    // Use a test endpoint that accepts uploads
+    const response = await fetch('https://httpbin.org/post', {
       method: 'POST',
       body: body,
       headers: {
@@ -148,7 +149,7 @@ async function handlePing(request: Request) {
     // Use a simple ping test with a small file
     const startTime = Date.now();
     
-    const response = await fetch('https://speed.cloudflare.com/__down?bytes=1024', {
+    const response = await fetch('https://www.google.com/favicon.ico', {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept': '*/*',

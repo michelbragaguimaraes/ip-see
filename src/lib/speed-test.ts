@@ -34,8 +34,8 @@ export interface SpeedTestServer {
 // List of available speed test servers
 export const speedTestServers: SpeedTestServer[] = [
   {
-    id: 'cloudflare',
-    host: 'Cloudflare',
+    id: 'netlify',
+    host: 'Netlify',
     location: 'Global',
     country: 'Global',
     url: '/api/speed?type=download',
@@ -287,14 +287,14 @@ async function measureUploadSpeed(
 
 async function getServerInfo(): Promise<{ host: string; location: string; country: string }> {
   return {
-    host: 'Cloudflare',
+    host: 'Netlify',
     location: 'Global',
     country: 'Global'
   };
 }
 
 export async function runSpeedTest(
-  selectedServerId: string = 'cloudflare',
+  selectedServerId: string = 'netlify',
   onProgress?: (type: 'download' | 'upload' | 'ping', progress: number, currentSpeed: number, currentPing?: number, currentJitter?: number) => void
 ): Promise<SpeedTestResult> {
   try {

@@ -117,20 +117,25 @@ export default function ToolsPage() {
     }
     setIsLoading(true);
     try {
-      // Simulate traceroute (real implementation would need a backend)
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const response = await fetch(`/api/traceroute?host=${encodeURIComponent(domain)}`);
+      if (!response.ok) {
+        throw new Error('Traceroute failed');
+      }
+      
+      const data = await response.json();
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
       setResults(prev => [{
         type: 'traceroute',
-        data: [
-          { hop: 1, ip: '192.168.1.1', time: '1ms' },
-          { hop: 2, ip: '10.0.0.1', time: '5ms' },
-          { hop: 3, ip: '8.8.8.8', time: '20ms' }
-        ],
+        data: data.hops,
         timestamp: new Date()
       }, ...prev]);
       toast.success('Traceroute completed');
     } catch (error) {
-      toast.error('Traceroute failed');
+      console.error('Traceroute error:', error);
+      toast.error(error instanceof Error ? error.message : 'Traceroute failed');
     } finally {
       setIsLoading(false);
     }

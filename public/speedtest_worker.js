@@ -11,13 +11,13 @@ let settings = {
   time_ul_max: 15, // max duration of upload test in seconds
   time_dl_max: 15, // max duration of download test in seconds
   time_auto: true, // shorten test on fast connections
-  time_ulGraceTime: 0.3, // shorter grace time for faster start
-  time_dlGraceTime: 0.3, // shorter grace time for faster start
+  time_ulGraceTime: 1, // wait for buffers to fill
+  time_dlGraceTime: 1, // wait for TCP window to increase
   count_ping: 10, // number of pings to perform
-  xhr_dlMultistream: 16, // more concurrent downloads
-  xhr_ulMultistream: 10, // balanced concurrent uploads
-  xhr_multistreamDelay: 30, // faster starts
-  overheadCompensationFactor: 1.08, // slightly increased overhead compensation
+  xhr_dlMultistream: 10, // increased from 6 to 10 for faster connections
+  xhr_ulMultistream: 10, // increased from 3 to 10 for faster connections
+  xhr_multistreamDelay: 100, // reduced from 300 to 100ms for faster starts
+  overheadCompensationFactor: 1.06, // compensate for network overhead
   useMebibits: false, // use megabits/s instead of mebibits/s
   url_dl: '', // URL for download test
   url_ul: '', // URL for upload test
@@ -70,28 +70,20 @@ async function measureDownload() {
     dlStatus = 0;
     dlProgress = 0;
 
-    const CHUNK_SIZE = 8 * 1024 * 1024; // Increased to 8MB chunks
-    const MIN_CHUNK_SIZE = 1 * 1024 * 1024; // Increased minimum chunk size
+    const CHUNK_SIZE = 4 * 1024 * 1024; // Increased to 4MB chunks
     let graceTimeDone = false;
     let startTime = performance.now();
     let bonusTime = 0;
     let speedSamples = [];
     let totalDownloaded = 0;
-    let lastSpeedUpdate = 0;
-    let lastChunkSize = CHUNK_SIZE;
 
     // Use multiple concurrent downloads
     const workers = Array(settings.xhr_dlMultistream).fill(0).map(async (_, index) => {
       await new Promise(r => setTimeout(r, settings.xhr_multistreamDelay * index));
       
       while (performance.now() - startTime < settings.time_dl_max * 1000) {
-        // Adjust chunk size based on speed
-        const chunkSize = lastSpeedUpdate > 100 ? 
-          Math.max(MIN_CHUNK_SIZE, Math.min(CHUNK_SIZE, lastChunkSize * 1.3)) : // More aggressive growth
-          Math.max(MIN_CHUNK_SIZE, lastChunkSize * 0.9);
-          
         const timestamp = Date.now();
-        const url = `${settings.url_dl}&bytes=${chunkSize}&t=${timestamp}&w=${index}`;
+        const url = `${settings.url_dl}&bytes=${CHUNK_SIZE}&t=${timestamp}&w=${index}`;
         
         const response = await fetch(url, {
           cache: 'no-store',
@@ -101,7 +93,9 @@ async function measureDownload() {
           }
         });
 
-        if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`Download failed: ${response.status}`);
+        }
 
         const data = await response.arrayBuffer();
         if (data.byteLength === 0) continue;
@@ -115,20 +109,17 @@ async function measureDownload() {
               startTime = now;
               bonusTime = 0;
               totalDownloaded = 0;
-              speedSamples = [];
             }
             graceTimeDone = true;
           }
         } else {
           totalDownloaded += data.byteLength;
           const speed = (totalDownloaded * 8) / ((duration / 1000) * 1000000) * settings.overheadCompensationFactor;
-          lastSpeedUpdate = speed;
-          lastChunkSize = chunkSize;
           
           if (settings.time_auto) {
-            // More aggressive bonus for faster tests
-            const bonus = (20 * speed) / 100000;
-            bonusTime += bonus > 3000 ? 3000 : bonus;
+            // Shorten test for fast connections
+            const bonus = (12.8 * speed) / 100000; // Doubled bonus for faster tests
+            bonusTime += bonus > 1600 ? 1600 : bonus; // Increased max bonus
           }
 
           dlStatus = speed;
@@ -149,9 +140,9 @@ async function measureDownload() {
       throw new Error('No data was downloaded');
     }
 
-    // Calculate final speed using sustained high speeds
+    // Calculate final speed using top 25% of samples instead of 10%
     const sortedSpeeds = speedSamples.sort((a, b) => b - a);
-    const topSpeedCount = Math.max(1, Math.floor(speedSamples.length * 0.5)); // Using top 50% of samples
+    const topSpeedCount = Math.max(1, Math.floor(speedSamples.length * 0.25));
     dlStatus = sortedSpeeds.slice(0, topSpeedCount).reduce((a, b) => a + b, 0) / topSpeedCount;
     dlProgress = 1;
     sendStatus();
@@ -169,108 +160,63 @@ async function measureUpload() {
     ulStatus = 0;
     ulProgress = 0;
 
-    const MAX_CHUNK_SIZE = 2 * 1024 * 1024; // Increased to 2MB but still safe for Netlify
-    const MIN_CHUNK_SIZE = 512 * 1024; // Increased min chunk size
+    const CHUNK_SIZE = 4 * 1024 * 1024; // Increased to 4MB chunks
     let graceTimeDone = false;
     let startTime = performance.now();
     let bonusTime = 0;
     let speedSamples = [];
     let totalUploaded = 0;
-    let lastSpeedUpdate = 0;
-    let lastChunkSize = MAX_CHUNK_SIZE;
-    let consecutiveErrors = 0;
-    const MAX_RETRIES = 3;
 
-    // Pre-generate test data for different sizes
-    const testData = new Map();
-    testData.set(MAX_CHUNK_SIZE, generateRandomData(MAX_CHUNK_SIZE));
-    testData.set(MIN_CHUNK_SIZE, generateRandomData(MIN_CHUNK_SIZE));
+    // Generate test data once and reuse
+    const data = generateRandomData(CHUNK_SIZE);
 
     // Use multiple concurrent uploads
-    const workers = Array(Math.min(10, settings.xhr_ulMultistream)).fill(0).map(async (_, index) => {
+    const workers = Array(settings.xhr_ulMultistream).fill(0).map(async (_, index) => {
       await new Promise(r => setTimeout(r, settings.xhr_multistreamDelay * index));
       
       while (performance.now() - startTime < settings.time_ul_max * 1000) {
-        try {
-          // Adjust chunk size based on speed and errors
-          const chunkSize = consecutiveErrors > 0 ? 
-            MIN_CHUNK_SIZE : // Use minimum size after errors
-            lastSpeedUpdate > 100 ? 
-              Math.max(MIN_CHUNK_SIZE, Math.min(MAX_CHUNK_SIZE, lastChunkSize * 1.2)) : // More aggressive growth
-              Math.max(MIN_CHUNK_SIZE, lastChunkSize * 0.9);
-
-          // Get or generate test data for this chunk size
-          let data = testData.get(chunkSize);
-          if (!data) {
-            data = generateRandomData(chunkSize);
-            testData.set(chunkSize, data);
+        const response = await fetch(settings.url_ul, {
+          method: 'POST',
+          body: data,
+          headers: {
+            'Content-Type': 'application/octet-stream'
           }
+        });
 
-          const response = await fetch(settings.url_ul, {
-            method: 'POST',
-            body: data,
-            headers: {
-              'Content-Type': 'application/octet-stream',
-              'Content-Length': data.length.toString()
-            }
-          });
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.status}`);
+        }
 
-          if (!response.ok) {
-            consecutiveErrors++;
-            if (consecutiveErrors >= MAX_RETRIES) {
-              throw new Error(`Upload failed: ${response.status}`);
+        const now = performance.now();
+        const duration = now - startTime;
+        
+        if (!graceTimeDone) {
+          if (duration > settings.time_ulGraceTime * 1000) {
+            if (totalUploaded > 0) {
+              startTime = now;
+              bonusTime = 0;
+              totalUploaded = 0;
             }
-            // Reduce chunk size and continue
-            lastChunkSize = MIN_CHUNK_SIZE;
-            continue;
+            graceTimeDone = true;
           }
-
-          // Reset error counter on success
-          consecutiveErrors = 0;
-
-          const now = performance.now();
-          const duration = now - startTime;
+        } else {
+          totalUploaded += data.length;
+          const speed = (totalUploaded * 8) / ((duration / 1000) * 1000000) * settings.overheadCompensationFactor;
           
-          if (!graceTimeDone) {
-            if (duration > settings.time_ulGraceTime * 1000) {
-              if (totalUploaded > 0) {
-                startTime = now;
-                bonusTime = 0;
-                totalUploaded = 0;
-                speedSamples = [];
-              }
-              graceTimeDone = true;
-            }
-          } else {
-            totalUploaded += data.length;
-            const speed = (totalUploaded * 8) / ((duration / 1000) * 1000000) * settings.overheadCompensationFactor;
-            lastSpeedUpdate = speed;
-            lastChunkSize = chunkSize;
-            
-            if (settings.time_auto) {
-              // More aggressive bonus while still being safe for Netlify
-              const bonus = (12 * speed) / 100000;
-              bonusTime += bonus > 2000 ? 2000 : bonus;
-            }
-
-            ulStatus = speed;
-            speedSamples.push(speed);
-            ulProgress = Math.min((duration + bonusTime) / (settings.time_ul_max * 1000), 1);
-            sendStatus();
-
-            if ((duration + bonusTime) / 1000 > settings.time_dl_max) {
-              break;
-            }
-
-            // Reduced delay between uploads
-            await new Promise(r => setTimeout(r, 30));
+          if (settings.time_auto) {
+            // Shorten test for fast connections
+            const bonus = (12.8 * speed) / 100000; // Doubled bonus for faster tests
+            bonusTime += bonus > 1600 ? 1600 : bonus; // Increased max bonus
           }
-        } catch (error) {
-          console.warn('Upload chunk error:', error);
-          consecutiveErrors++;
-          if (consecutiveErrors >= MAX_RETRIES) throw error;
-          // Add exponential backoff delay
-          await new Promise(r => setTimeout(r, Math.min(1000, 100 * Math.pow(2, consecutiveErrors))));
+
+          ulStatus = speed;
+          speedSamples.push(speed);
+          ulProgress = Math.min((duration + bonusTime) / (settings.time_ul_max * 1000), 1);
+          sendStatus();
+
+          if ((duration + bonusTime) / 1000 > settings.time_ul_max) {
+            break;
+          }
         }
       }
     });
@@ -281,9 +227,9 @@ async function measureUpload() {
       throw new Error('No data was uploaded');
     }
 
-    // Calculate final speed using sustained high speeds
+    // Calculate final speed using top 25% of samples instead of 10%
     const sortedSpeeds = speedSamples.sort((a, b) => b - a);
-    const topSpeedCount = Math.max(1, Math.floor(speedSamples.length * 0.5)); // Using top 50% of samples
+    const topSpeedCount = Math.max(1, Math.floor(speedSamples.length * 0.25));
     ulStatus = sortedSpeeds.slice(0, topSpeedCount).reduce((a, b) => a + b, 0) / topSpeedCount;
     ulProgress = 1;
     sendStatus();

@@ -20,8 +20,8 @@ async function handleDownload(request: Request) {
     const url = new URL(request.url);
     const chunkNumber = parseInt(url.searchParams.get('chunk') || '0', 10);
     
-    // Generate a chunk of data (64KB per chunk)
-    const chunkSize = 64 * 1024; // 64KB chunks to stay within Netlify limits
+    // Generate a chunk of data (1MB per chunk)
+    const chunkSize = 1024 * 1024; // 1MB chunks
     const chunk = new Uint8Array(chunkSize);
     crypto.getRandomValues(chunk);
     
@@ -30,11 +30,14 @@ async function handleDownload(request: Request) {
       headers: {
         'Content-Type': 'application/octet-stream',
         'Content-Length': chunkSize.toString(),
-        'X-Total-Chunks': '100', // Total number of chunks available
+        'X-Total-Chunks': '50', // Total number of chunks (50MB total)
         'X-Chunk-Number': chunkNumber.toString(),
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
         'Pragma': 'no-cache',
-        'Expires': '0'
+        'Expires': '0',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': '*'
       }
     });
   } catch (error) {
@@ -57,15 +60,17 @@ async function handleUpload(request: Request) {
     const body = await request.arrayBuffer();
     const endTime = Date.now();
     
-    console.log(`Received upload body of size: ${(body.byteLength / (1024 * 1024)).toFixed(2)} MB`);
-    
     // Calculate actual upload speed based on the time it took to receive the data
-    const duration = (endTime - startTime) / 1000; // in seconds
+    const duration = Math.max(0.1, (endTime - startTime) / 1000); // in seconds, minimum 0.1s to avoid division by zero
     const speedInMbps = (body.byteLength * 8) / (1024 * 1024 * duration);
     
     console.log(`Upload completed: ${(body.byteLength / (1024 * 1024)).toFixed(2)} MB in ${duration.toFixed(2)}s, Speed: ${speedInMbps.toFixed(2)} Mbps`);
     
-    return NextResponse.json({ speed: speedInMbps });
+    return NextResponse.json({ 
+      speed: speedInMbps,
+      size: body.byteLength,
+      duration: duration
+    });
   } catch (error) {
     console.error('Upload error:', error);
     return NextResponse.json(

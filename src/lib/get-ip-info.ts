@@ -13,8 +13,14 @@ interface IpInfo {
 
 export async function getIpInfo(): Promise<IpInfo> {
   try {
-    // Use our server-side API endpoint instead of calling ipinfo.io directly
-    const response = await axios.get('/api/ip');
+    // Add timestamp to prevent caching
+    const timestamp = new Date().getTime();
+    const response = await axios.get(`/api/ip?t=${timestamp}`, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    });
     return response.data;
   } catch (error) {
     console.error('Error fetching IP info:', error);

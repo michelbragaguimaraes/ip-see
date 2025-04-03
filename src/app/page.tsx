@@ -17,6 +17,8 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [speedTestResult, setSpeedTestResult] = useState<SpeedTestResult | null>(null);
   const [isSpeedTestLoading, setIsSpeedTestLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const fetchIpInfo = async () => {
     setIsLoading(true);
@@ -62,6 +64,37 @@ export default function Home() {
     }
   };
 
+  const refreshIPData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const timestamp = new Date().getTime();
+      const response = await fetch(`/api/ip?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch IP data: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('IP data refreshed:', data);
+      
+      setIpInfo(data);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error('Error refreshing IP data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to refresh IP data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchIpInfo();
   }, []);
@@ -78,6 +111,17 @@ export default function Home() {
             <p className="text-muted-foreground max-w-[600px] mx-auto">
               Get detailed information about your IP address, location, and network performance with our comprehensive tools.
             </p>
+          </div>
+          
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">IP Information</h2>
+            <button 
+              onClick={refreshIPData}
+              disabled={isLoading}
+              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+            >
+              {isLoading ? 'Refreshing...' : 'Refresh IP'}
+            </button>
           </div>
           
           <div className="grid gap-8">

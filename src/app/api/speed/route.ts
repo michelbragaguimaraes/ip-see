@@ -16,7 +16,7 @@ async function handleDownload(request: Request) {
   try {
     console.log('Starting download test');
     
-    // Use a large file from a reliable CDN (1GB)
+    // Use Cloudflare's speed test endpoint
     const url = 'https://speed.cloudflare.com/__down?bytes=1073741824'; // 1GB
     
     console.log(`Fetching from: ${url}`);
@@ -97,11 +97,10 @@ async function handleUpload(request: Request) {
     const body = await request.arrayBuffer();
     console.log(`Received upload body of size: ${(body.byteLength / (1024 * 1024)).toFixed(2)} MB`);
     
-    // Simulate upload by sending to a test endpoint
+    // Use Cloudflare's upload endpoint
     const startTime = Date.now();
     
-    // Use a test endpoint that accepts uploads
-    const response = await fetch('https://httpbin.org/post', {
+    const response = await fetch('https://speed.cloudflare.com/__up', {
       method: 'POST',
       body: body,
       headers: {
@@ -146,14 +145,13 @@ async function handlePing(request: Request) {
   try {
     console.log('Starting ping test');
     
-    // Use a simple ping test
+    // Use Cloudflare's ping endpoint
     const startTime = Date.now();
     
-    // Use a small file for ping test
-    const response = await fetch('https://www.google.com/favicon.ico', {
+    const response = await fetch('https://speed.cloudflare.com/__ping', {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': '*/*',
+        'Accept': 'application/json',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0'
@@ -170,11 +168,8 @@ async function handlePing(request: Request) {
       );
     }
 
-    // Consume the response body
-    await response.arrayBuffer();
-    
-    const endTime = Date.now();
-    const pingTime = endTime - startTime;
+    const data = await response.json();
+    const pingTime = Date.now() - startTime;
     
     console.log(`Ping completed in ${pingTime}ms`);
     

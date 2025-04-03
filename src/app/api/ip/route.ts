@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 
 export async function GET() {
   try {
-    const response = await fetch('https://ipinfo.io/json', {
+    const headersList = headers();
+    const forwardedFor = headersList.get('x-forwarded-for');
+    const clientIp = forwardedFor ? forwardedFor.split(',')[0] : headersList.get('x-real-ip');
+
+    const response = await fetch(`https://ipinfo.io/${clientIp}/json`, {
       headers: {
         'Accept': 'application/json',
       },

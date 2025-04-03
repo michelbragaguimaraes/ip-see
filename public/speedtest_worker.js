@@ -11,12 +11,12 @@ let settings = {
   time_ul_max: 15, // max duration of upload test in seconds
   time_dl_max: 15, // max duration of download test in seconds
   time_auto: true, // shorten test on fast connections
-  time_ulGraceTime: 1, // wait for buffers to fill
-  time_dlGraceTime: 1, // wait for TCP window to increase
+  time_ulGraceTime: 3, // wait for buffers to fill
+  time_dlGraceTime: 1.5, // wait for TCP window to increase
   count_ping: 10, // number of pings to perform
-  xhr_dlMultistream: 10, // increased from 6 to 10 for faster connections
-  xhr_ulMultistream: 10, // increased from 3 to 10 for faster connections
-  xhr_multistreamDelay: 100, // reduced from 300 to 100ms for faster starts
+  xhr_dlMultistream: 6, // number of download streams
+  xhr_ulMultistream: 3, // number of upload streams
+  xhr_multistreamDelay: 300, // delay between concurrent requests
   overheadCompensationFactor: 1.06, // compensate for network overhead
   useMebibits: false, // use megabits/s instead of mebibits/s
   url_dl: '', // URL for download test
@@ -70,7 +70,7 @@ async function measureDownload() {
     dlStatus = 0;
     dlProgress = 0;
 
-    const CHUNK_SIZE = 4 * 1024 * 1024; // Increased to 4MB chunks
+    const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
     let graceTimeDone = false;
     let startTime = performance.now();
     let bonusTime = 0;
@@ -118,8 +118,8 @@ async function measureDownload() {
           
           if (settings.time_auto) {
             // Shorten test for fast connections
-            const bonus = (12.8 * speed) / 100000; // Doubled bonus for faster tests
-            bonusTime += bonus > 1600 ? 1600 : bonus; // Increased max bonus
+            const bonus = (6.4 * speed) / 100000;
+            bonusTime += bonus > 800 ? 800 : bonus;
           }
 
           dlStatus = speed;
@@ -140,9 +140,9 @@ async function measureDownload() {
       throw new Error('No data was downloaded');
     }
 
-    // Calculate final speed using top 25% of samples instead of 10%
+    // Calculate final speed using top 10% of samples
     const sortedSpeeds = speedSamples.sort((a, b) => b - a);
-    const topSpeedCount = Math.max(1, Math.floor(speedSamples.length * 0.25));
+    const topSpeedCount = Math.max(1, Math.floor(speedSamples.length * 0.1));
     dlStatus = sortedSpeeds.slice(0, topSpeedCount).reduce((a, b) => a + b, 0) / topSpeedCount;
     dlProgress = 1;
     sendStatus();
@@ -160,7 +160,7 @@ async function measureUpload() {
     ulStatus = 0;
     ulProgress = 0;
 
-    const CHUNK_SIZE = 4 * 1024 * 1024; // Increased to 4MB chunks
+    const CHUNK_SIZE = 1024 * 1024; // 1MB chunks
     let graceTimeDone = false;
     let startTime = performance.now();
     let bonusTime = 0;
@@ -205,8 +205,8 @@ async function measureUpload() {
           
           if (settings.time_auto) {
             // Shorten test for fast connections
-            const bonus = (12.8 * speed) / 100000; // Doubled bonus for faster tests
-            bonusTime += bonus > 1600 ? 1600 : bonus; // Increased max bonus
+            const bonus = (6.4 * speed) / 100000;
+            bonusTime += bonus > 800 ? 800 : bonus;
           }
 
           ulStatus = speed;
@@ -227,9 +227,9 @@ async function measureUpload() {
       throw new Error('No data was uploaded');
     }
 
-    // Calculate final speed using top 25% of samples instead of 10%
+    // Calculate final speed using top 10% of samples
     const sortedSpeeds = speedSamples.sort((a, b) => b - a);
-    const topSpeedCount = Math.max(1, Math.floor(speedSamples.length * 0.25));
+    const topSpeedCount = Math.max(1, Math.floor(speedSamples.length * 0.1));
     ulStatus = sortedSpeeds.slice(0, topSpeedCount).reduce((a, b) => a + b, 0) / topSpeedCount;
     ulProgress = 1;
     sendStatus();

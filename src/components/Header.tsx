@@ -23,7 +23,7 @@ export function Header() {
         </div>
         <div className="flex items-center space-x-4">
           <Button variant="ghost" size="icon" asChild>
-            <Link href="https://github.com/yourusername/ip-see" target="_blank" rel="noopener noreferrer">
+            <Link href="https://github.com/michelbragaguimaraes/ip-see" target="_blank" rel="noopener noreferrer">
               <Github className="h-5 w-5" />
               <span className="sr-only">GitHub</span>
             </Link>

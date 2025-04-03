@@ -5,7 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Shield, Activity, Globe } from "lucide-react";
-import { toast } from "sonner";
+import { toast, Toaster } from "sonner";
+import { Header } from '@/components/Header';
+import { Footer } from '@/components/Footer';
 
 interface ToolResult {
   type: 'dns' | 'port' | 'ssl' | 'traceroute';
@@ -142,84 +144,91 @@ export default function ToolsPage() {
   };
 
   return (
-    <div className="container mx-auto max-w-4xl py-8 px-4 space-y-8">
-      <div className="text-center space-y-4">
-        <h1 className="text-3xl font-bold tracking-tight">Network Tools</h1>
-        <p className="text-muted-foreground max-w-[600px] mx-auto">
-          A collection of tools to help you analyze and troubleshoot network connections.
-        </p>
-      </div>
+    <div className="min-h-screen flex flex-col bg-background">
+      <Header />
+      <main className="flex-1 py-8 px-4">
+        <div className="container mx-auto max-w-4xl space-y-8">
+          <div className="text-center space-y-4">
+            <h1 className="text-3xl font-bold tracking-tight">Network Tools</h1>
+            <p className="text-muted-foreground max-w-[600px] mx-auto">
+              A collection of tools to help you analyze and troubleshoot network connections.
+            </p>
+          </div>
 
-      <div className="grid gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Domain Tools</CardTitle>
-            <CardDescription>Enter a domain to analyze</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-4 flex-wrap">
-              <Input
-                placeholder="Enter domain (e.g., google.com)"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                className="flex-1 min-w-[200px]"
-              />
-              <Input
-                placeholder="Port (optional)"
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
-                className="w-24"
-              />
-            </div>
-            <div className="flex gap-2 mt-4 flex-wrap">
-              <Button onClick={runDnsLookup} disabled={isLoading}>
-                <Search className="mr-2 h-4 w-4" />
-                DNS Lookup
-              </Button>
-              <Button onClick={checkPort} disabled={isLoading}>
-                <Activity className="mr-2 h-4 w-4" />
-                Check Port
-              </Button>
-              <Button onClick={checkSSL} disabled={isLoading}>
-                <Shield className="mr-2 h-4 w-4" />
-                Check SSL
-              </Button>
-              <Button onClick={runTraceroute} disabled={isLoading}>
-                <Globe className="mr-2 h-4 w-4" />
-                Traceroute
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          <div className="grid gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Domain Tools</CardTitle>
+                <CardDescription>Enter a domain to analyze</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-4 flex-wrap">
+                  <Input
+                    placeholder="Enter domain (e.g., google.com)"
+                    value={domain}
+                    onChange={(e) => setDomain(e.target.value)}
+                    className="flex-1 min-w-[200px]"
+                  />
+                  <Input
+                    placeholder="Port (optional)"
+                    value={port}
+                    onChange={(e) => setPort(e.target.value)}
+                    className="w-24"
+                  />
+                </div>
+                <div className="flex gap-2 mt-4 flex-wrap">
+                  <Button onClick={runDnsLookup} disabled={isLoading}>
+                    <Search className="mr-2 h-4 w-4" />
+                    DNS Lookup
+                  </Button>
+                  <Button onClick={checkPort} disabled={isLoading}>
+                    <Activity className="mr-2 h-4 w-4" />
+                    Check Port
+                  </Button>
+                  <Button onClick={checkSSL} disabled={isLoading}>
+                    <Shield className="mr-2 h-4 w-4" />
+                    Check SSL
+                  </Button>
+                  <Button onClick={runTraceroute} disabled={isLoading}>
+                    <Globe className="mr-2 h-4 w-4" />
+                    Traceroute
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
-        {results.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Results</CardTitle>
-              <CardDescription>Latest results shown first</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {results.map((result, index) => (
-                  <div key={index} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-medium">
-                        {result.type.toUpperCase()} Result
-                      </h3>
-                      <span className="text-sm text-muted-foreground">
-                        {result.timestamp.toLocaleString()}
-                      </span>
-                    </div>
-                    <pre className="bg-muted p-4 rounded-md overflow-x-auto text-sm">
-                      {JSON.stringify(result.data, null, 2)}
-                    </pre>
+            {results.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Results</CardTitle>
+                  <CardDescription>Latest results shown first</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {results.map((result, index) => (
+                      <div key={index} className="border rounded-lg p-4">
+                        <div className="flex justify-between items-start mb-2">
+                          <h3 className="font-medium">
+                            {result.type.toUpperCase()} Result
+                          </h3>
+                          <span className="text-sm text-muted-foreground">
+                            {result.timestamp.toLocaleString()}
+                          </span>
+                        </div>
+                        <pre className="bg-muted p-4 rounded-md overflow-x-auto text-sm">
+                          {JSON.stringify(result.data, null, 2)}
+                        </pre>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+      </main>
+      <Footer />
+      <Toaster />
     </div>
   );
 } 

@@ -51,7 +51,7 @@ async function measureDownloadSpeed(
   try {
     console.log('Starting download test');
     
-    const response = await fetch(server.url + '?' + new Date().getTime(), {
+    const response = await fetch(server.url + '&t=' + new Date().getTime(), {
       method: 'GET',
       cache: 'no-store'
     });
@@ -221,7 +221,7 @@ async function measureUploadSpeed(
       formData.append('file', new Blob([chunk.slice(0, currentChunkSize)]), 'test.bin');
 
       // Upload the chunk
-      const response = await fetch(server.url + '?' + new Date().getTime(), {
+      const response = await fetch(server.uploadUrl + '&t=' + new Date().getTime(), {
         method: 'POST',
         body: formData,
         cache: 'no-store',
@@ -261,7 +261,7 @@ async function measureUploadSpeed(
     const sortedSpeeds = speedSamples.sort((a, b) => a - b);
     const trimAmount = Math.floor(speedSamples.length * 0.1);
     const trimmedSpeeds = sortedSpeeds.slice(trimAmount, -trimAmount);
-    const avgSpeed = trimmedSpeeds.reduce((a, b) => a + b, 0) / trimmedSpeeds.length;
+    const avgSpeed = trimmedSpeeds.reduce((a, b) => a + b, 0) / trimmedSpeeds.length || 0;
 
     console.log(`Upload completed: ${(uploadedBytes / (1024 * 1024)).toFixed(2)} MB in ${totalTime.toFixed(2)}s`);
     

@@ -51,7 +51,9 @@ async function measureDownloadSpeed(
   try {
     console.log('Starting download test');
     
-    const response = await fetch(server.url, {
+    // Use a large file from a fast CDN for direct browser download
+    const url = 'https://cdn.jsdelivr.net/gh/jquery/jquery@3.7.1/dist/jquery.min.js';
+    const response = await fetch(url + '?' + new Date().getTime(), {
       method: 'GET',
       cache: 'no-store',
       headers: {
@@ -66,45 +68,44 @@ async function measureDownloadSpeed(
     }
 
     const contentLength = response.headers.get('Content-Length');
-    const totalBytes = contentLength ? parseInt(contentLength, 10) : 100 * 1024 * 1024; // Default to 100MB if not specified
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+    
+    if (!totalBytes) {
+      throw new Error('Could not determine file size');
+    }
+
     let downloadedBytes = 0;
     let startTime = performance.now();
     let lastProgressTime = startTime;
     let lastBytesRead = 0;
+    let speedSamples: number[] = [];
+
+    // Start progress at 0%
+    onProgress?.(0, 0);
 
     const reader = response.body?.getReader();
     if (!reader) {
       throw new Error('Failed to get response reader');
     }
 
-    // Start progress at 0%
-    onProgress?.(0, 0);
-
+    // Read the stream in chunks
     while (true) {
       const { done, value } = await reader.read();
       
-      if (done) {
-        break;
-      }
-
-      downloadedBytes += value.length;
+      if (done) break;
       
-      // Update progress
-      const progress = Math.min(100, (downloadedBytes / totalBytes) * 100);
+      downloadedBytes += value.length;
+      const progress = (downloadedBytes / totalBytes) * 100;
       const currentTime = performance.now();
       const timeDiff = currentTime - lastProgressTime;
-      
-      // Update progress every 100ms
-      if (timeDiff >= 100) {
+
+      // Calculate speed every 200ms
+      if (timeDiff >= 200) {
         const bytesDiff = downloadedBytes - lastBytesRead;
         const currentSpeed = (bytesDiff * 8) / (timeDiff / 1000) / (1024 * 1024); // Mbps
+        speedSamples.push(currentSpeed);
         
         onProgress?.(progress, currentSpeed);
-        
-        // Log progress every 10MB
-        if (downloadedBytes % (10 * 1024 * 1024) < value.length) {
-          console.log(`Downloaded ${(downloadedBytes / (1024 * 1024)).toFixed(2)} MB (${progress.toFixed(1)}%) at ${currentSpeed.toFixed(2)} Mbps`);
-        }
         
         lastProgressTime = currentTime;
         lastBytesRead = downloadedBytes;
@@ -112,14 +113,19 @@ async function measureDownloadSpeed(
     }
 
     const totalTime = (performance.now() - startTime) / 1000; // in seconds
-    const speedInMbps = (downloadedBytes * 8) / (1024 * 1024 * totalTime);
+    
+    // Calculate average speed excluding the lowest and highest 10% of samples
+    const sortedSpeeds = speedSamples.sort((a, b) => a - b);
+    const trimAmount = Math.floor(speedSamples.length * 0.1);
+    const trimmedSpeeds = sortedSpeeds.slice(trimAmount, -trimAmount);
+    const avgSpeed = trimmedSpeeds.reduce((a, b) => a + b, 0) / trimmedSpeeds.length;
 
-    console.log(`Download completed: Speed: ${speedInMbps.toFixed(2)} Mbps`);
+    console.log(`Download completed: ${(downloadedBytes / (1024 * 1024)).toFixed(2)} MB in ${totalTime.toFixed(2)}s`);
     
     // Ensure we report 100% progress at the end
-    onProgress?.(100, speedInMbps);
+    onProgress?.(100, avgSpeed);
 
-    return speedInMbps;
+    return avgSpeed;
   } catch (error) {
     console.error('Download speed test error:', error);
     throw error;
@@ -196,97 +202,78 @@ async function measureUploadSpeed(
 ): Promise<number> {
   try {
     console.log('Starting upload test');
+
+    // Create test data (25MB)
+    const chunkSize = 1024 * 1024; // 1MB chunks
+    const totalSize = 25 * chunkSize; // 25MB total
+    const chunk = new Uint8Array(chunkSize).fill(0);
     
-    // Create a test file to upload (25MB)
-    const chunkSize = 1 * 1024 * 1024; // 1MB chunks
-    const totalSize = 25 * 1024 * 1024; // 25MB total
-    const numChunks = Math.ceil(totalSize / chunkSize);
-    
-    console.log(`Creating ${numChunks} chunks of ${chunkSize / (1024 * 1024)}MB each for a total of ${totalSize / (1024 * 1024 * 1024)}GB`);
-    
-    // Create a single chunk to upload
-    const chunk = new Uint8Array(chunkSize);
-    for (let i = 0; i < chunk.length; i++) {
-      chunk[i] = Math.floor(Math.random() * 256);
-    }
-    
-    // Upload the chunk multiple times to simulate a larger file
-    let totalUploaded = 0;
+    let uploadedBytes = 0;
     let startTime = performance.now();
-    let lastProgressUpdate = 0;
-    
-    // Upload in parallel for better throughput
-    const maxConcurrentUploads = 3;
-    const uploadPromises = [];
-    
+    let lastProgressTime = startTime;
+    let lastBytesUploaded = 0;
+    let speedSamples: number[] = [];
+
     // Start progress at 0%
     onProgress?.(0, 0);
-    
-    for (let i = 0; i < numChunks; i += maxConcurrentUploads) {
-      const batchSize = Math.min(maxConcurrentUploads, numChunks - i);
-      const batchPromises = [];
+
+    // Upload in chunks
+    while (uploadedBytes < totalSize) {
+      const remainingBytes = totalSize - uploadedBytes;
+      const currentChunkSize = Math.min(chunkSize, remainingBytes);
       
-      for (let j = 0; j < batchSize; j++) {
-        const promise = fetch(server.uploadUrl, {
-          method: 'POST',
-          body: chunk,
-          cache: 'no-store',
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-          }
-        }).then(async (response) => {
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => 'Unknown error');
-            throw new Error(`Upload failed: ${response.status} ${errorText}`);
-          }
-          
-          const data = await response.json();
-          if (data.error) {
-            throw new Error(`Upload error: ${data.error}`);
-          }
-          
-          totalUploaded += chunkSize;
-          
-          // Update progress
-          const progress = Math.min(100, (totalUploaded / totalSize) * 100);
-          const currentTime = performance.now();
-          
-          // Update progress every 0.25% or every 25ms
-          if (progress - lastProgressUpdate >= 0.25 || currentTime - startTime >= 25) {
-            const elapsed = (currentTime - startTime) / 1000; // in seconds
-            const currentSpeed = (totalUploaded * 8) / (1024 * 1024 * elapsed); // in Mbps
-            
-            onProgress?.(progress, currentSpeed);
-            lastProgressUpdate = progress;
-            startTime = currentTime;
-            
-            // Log progress every 2MB
-            if (totalUploaded % (2 * 1024 * 1024) < chunkSize) {
-              console.log(`Uploaded ${(totalUploaded / (1024 * 1024)).toFixed(2)} MB (${progress.toFixed(1)}%) at ${currentSpeed.toFixed(2)} Mbps`);
-            }
-          }
-          
-          return data.speed || 0;
-        });
-        
-        batchPromises.push(promise);
+      // Create form data with the current chunk
+      const formData = new FormData();
+      formData.append('file', new Blob([chunk.slice(0, currentChunkSize)]), 'test.bin');
+
+      // Upload the chunk
+      const response = await fetch(server.url + '?' + new Date().getTime(), {
+        method: 'POST',
+        body: formData,
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status}`);
       }
-      
-      // Wait for the current batch to complete before starting the next batch
-      const batchResults = await Promise.all(batchPromises);
-      uploadPromises.push(...batchResults);
+
+      uploadedBytes += currentChunkSize;
+      const progress = (uploadedBytes / totalSize) * 100;
+      const currentTime = performance.now();
+      const timeDiff = currentTime - lastProgressTime;
+
+      // Calculate speed every 200ms
+      if (timeDiff >= 200) {
+        const bytesDiff = uploadedBytes - lastBytesUploaded;
+        const currentSpeed = (bytesDiff * 8) / (timeDiff / 1000) / (1024 * 1024); // Mbps
+        speedSamples.push(currentSpeed);
+        
+        onProgress?.(progress, currentSpeed);
+        
+        lastProgressTime = currentTime;
+        lastBytesUploaded = uploadedBytes;
+      }
+
+      // Small delay to prevent overwhelming the server
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
+
+    const totalTime = (performance.now() - startTime) / 1000; // in seconds
     
-    // Calculate average speed from all uploads
-    const speeds = await Promise.all(uploadPromises);
-    const avgSpeed = speeds.reduce((sum, speed) => sum + speed, 0) / speeds.length;
-    
-    console.log(`Upload completed: Average speed: ${avgSpeed.toFixed(2)} Mbps`);
+    // Calculate average speed excluding the lowest and highest 10% of samples
+    const sortedSpeeds = speedSamples.sort((a, b) => a - b);
+    const trimAmount = Math.floor(speedSamples.length * 0.1);
+    const trimmedSpeeds = sortedSpeeds.slice(trimAmount, -trimAmount);
+    const avgSpeed = trimmedSpeeds.reduce((a, b) => a + b, 0) / trimmedSpeeds.length;
+
+    console.log(`Upload completed: ${(uploadedBytes / (1024 * 1024)).toFixed(2)} MB in ${totalTime.toFixed(2)}s`);
     
     // Ensure we report 100% progress at the end
     onProgress?.(100, avgSpeed);
-    
+
     return avgSpeed;
   } catch (error) {
     console.error('Upload speed test error:', error);

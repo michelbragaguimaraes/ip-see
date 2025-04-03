@@ -111,30 +111,16 @@ async function handleUpload(request: Request) {
   try {
     console.log('Starting upload test');
     
-    // Get the request body as an ArrayBuffer
-    const body = await request.arrayBuffer();
-    console.log(`Received upload body of size: ${(body.byteLength / (1024 * 1024)).toFixed(2)} MB`);
-    
-    // Instead of actually uploading to an external service, just simulate the upload
-    // This avoids issues with Netlify's serverless functions and external services
     const startTime = Date.now();
     
-    // Simulate processing time based on the size of the upload
-    // This gives a more realistic speed test experience
-    const simulatedProcessingTime = Math.min(2000, Math.max(300, body.byteLength / (1024 * 1024) * 20));
-    
-    // Split the processing time into smaller chunks to make it feel more responsive
-    const chunkTime = 50; // 50ms chunks
-    const numChunks = Math.ceil(simulatedProcessingTime / chunkTime);
-    
-    for (let i = 0; i < numChunks; i++) {
-      await new Promise(resolve => setTimeout(resolve, chunkTime));
-    }
-    
+    // Get the request body as an ArrayBuffer
+    const body = await request.arrayBuffer();
     const endTime = Date.now();
-    const duration = (endTime - startTime) / 1000; // in seconds
     
-    // Calculate speed in Mbps
+    console.log(`Received upload body of size: ${(body.byteLength / (1024 * 1024)).toFixed(2)} MB`);
+    
+    // Calculate actual upload speed based on the time it took to receive the data
+    const duration = (endTime - startTime) / 1000; // in seconds
     const speedInMbps = (body.byteLength * 8) / (1024 * 1024 * duration);
     
     console.log(`Upload completed: ${(body.byteLength / (1024 * 1024)).toFixed(2)} MB in ${duration.toFixed(2)}s, Speed: ${speedInMbps.toFixed(2)} Mbps`);

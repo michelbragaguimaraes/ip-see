@@ -69,6 +69,20 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Google Analytics */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-K7SWKCFTFS"
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-K7SWKCFTFS');
+          `}
+        </Script>
+        
         {/* Google Tag Manager */}
         <Script id="google-tag-manager" strategy="afterInteractive">
           {`
@@ -79,7 +93,6 @@ export default function RootLayout({
             })(window,document,'script','dataLayer','GTM-TV3CWNWD');
           `}
         </Script>
-        {/* End Google Tag Manager */}
         
         {/* Google AdSense */}
         <Script
@@ -99,7 +112,6 @@ export default function RootLayout({
             style={{ display: 'none', visibility: 'hidden' }}
           />
         </noscript>
-        {/* End Google Tag Manager (noscript) */}
         
         <ThemeProvider
           attribute="class"

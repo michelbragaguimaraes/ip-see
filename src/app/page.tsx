@@ -9,7 +9,13 @@ import { Toaster } from 'sonner';
 import { toast } from 'sonner';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
-import { AdSense } from '@/components/AdSense';
+import { IPInfo } from "@/components/ip-info";
+import { Traceroute } from "@/components/traceroute";
+import { DNSLookup } from "@/components/dns-lookup";
+import { PortScanner } from "@/components/port-scanner";
+import { TempMail } from "@/components/temp-mail";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function Home() {
   const [ipInfo, setIpInfo] = useState({
@@ -119,54 +125,90 @@ export default function Home() {
       <Header />
       <main className="flex-1 py-8 px-4">
         <div className="container mx-auto max-w-4xl space-y-8">
-          {/* Top ad */}
-          <div className="w-full">
-            <AdSense
-              adSlot="1234567890" // Replace with your actual ad slot ID
-              className="mb-8"
-            />
-          </div>
-
           <div className="text-center space-y-4">
-            <h2 className="text-3xl font-bold tracking-tight">
-              Check Your IP & Network Status
-            </h2>
-            <p className="text-muted-foreground max-w-[600px] mx-auto">
-              Get detailed information about your IP address, location, and network performance with our comprehensive tools.
+            <h1 className="text-4xl font-bold tracking-tight">IP-See</h1>
+            <p className="text-xl text-muted-foreground">
+              Free IP address lookup, network diagnostics, and temporary email tools
             </p>
           </div>
-          
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">IP Information</h2>
-            <button 
-              onClick={refreshIPData}
-              disabled={isLoading}
-              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-            >
-              {isLoading ? 'Refreshing...' : 'Refresh IP'}
-            </button>
-          </div>
-          
+
           <div className="grid gap-8">
-            <IpCard {...ipInfo} onRefresh={fetchIpInfo} isLoading={isLoading} />
+            <IPInfo />
             
-            {/* Middle ad */}
-            <AdSense
-              adSlot="0987654321" // Replace with your actual ad slot ID
-              className="my-8"
-            />
-            
-            <SpeedTest 
-              result={speedTestResult} 
-              onRunTest={runSpeedTestHandler} 
-              isLoading={isSpeedTestLoading} 
-            />
-            
-            {/* Bottom ad */}
-            <AdSense
-              adSlot="5432109876" // Replace with your actual ad slot ID
-              className="mt-8"
-            />
+            <Tabs defaultValue="speed" className="w-full">
+              <TabsList className="grid w-full grid-cols-5">
+                <TabsTrigger value="speed">Speed Test</TabsTrigger>
+                <TabsTrigger value="traceroute">Traceroute</TabsTrigger>
+                <TabsTrigger value="dns">DNS Lookup</TabsTrigger>
+                <TabsTrigger value="ports">Port Scanner</TabsTrigger>
+                <TabsTrigger value="mail">Temp Mail</TabsTrigger>
+              </TabsList>
+              <TabsContent value="speed">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Network Speed Test</CardTitle>
+                    <CardDescription>
+                      Measure your download and upload speeds
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <SpeedTest />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="traceroute">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Network Traceroute</CardTitle>
+                    <CardDescription>
+                      Trace the network path to a destination
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Traceroute />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="dns">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>DNS Lookup</CardTitle>
+                    <CardDescription>
+                      Look up DNS records for a domain
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <DNSLookup />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="ports">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Port Scanner</CardTitle>
+                    <CardDescription>
+                      Check if common ports are open
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <PortScanner />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="mail">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Temporary Email</CardTitle>
+                    <CardDescription>
+                      Generate a temporary email address
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <TempMail />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       </main>

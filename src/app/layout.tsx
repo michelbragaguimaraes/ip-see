@@ -93,14 +93,6 @@ export default function RootLayout({
             })(window,document,'script','dataLayer','GTM-TV3CWNWD');
           `}
         </Script>
-        
-        {/* Google AdSense */}
-        <Script
-          async
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4861321135980201"
-          crossOrigin="anonymous"
-          strategy="afterInteractive"
-        />
       </head>
       <body className={inter.className}>
         {/* Google Tag Manager (noscript) */}

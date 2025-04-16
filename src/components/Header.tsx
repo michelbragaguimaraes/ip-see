@@ -1,9 +1,12 @@
 import { ThemeToggle } from './theme-toggle';
 import { Button } from './ui/button';
-import { Github, Globe } from 'lucide-react';
+import { Github, Globe, Menu } from 'lucide-react';
 import Link from 'next/link';
+import { useState } from 'react';
 
 export function Header() {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   return (
     <header className="border-b">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
@@ -32,8 +35,27 @@ export function Header() {
             </Link>
           </Button>
           <ThemeToggle />
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">Menu</span>
+          </Button>
         </div>
       </div>
+      {isMobileMenuOpen && (
+        <div className="md:hidden bg-background border-b">
+          <nav className="container mx-auto px-4 py-2 flex flex-col space-y-2">
+            <Link href="/history" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              History
+            </Link>
+            <Link href="/tools" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              Tools
+            </Link>
+            <Link href="/temp-email" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              Temp Email
+            </Link>
+          </nav>
+        </div>
+      )}
     </header>
   );
-} 
+}

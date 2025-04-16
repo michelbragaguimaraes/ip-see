@@ -13,6 +13,14 @@ const nextConfig = {
       use: 'ignore-loader'
     });
     return config;
+  },
+  experimental: {
+    turbo: {
+      rules: {
+        // Add rule for HTML files in Turbopack
+        '*.html': ['ignore-loader']
+      }
+    }
   }
 }
 

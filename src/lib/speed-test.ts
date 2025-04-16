@@ -106,7 +106,8 @@ export class SpeedTest {
     return new Promise((resolve, reject) => {
       try {
         // Create worker
-        this.worker = new Worker('/speedtest_worker.js');
+        // @ts-ignore
+        this.worker = new Worker(new URL('/speedtest_worker.js', import.meta.url));
 
         // Handle messages from worker
         this.worker.onmessage = (e) => {

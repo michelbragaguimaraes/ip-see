@@ -38,6 +38,7 @@
     "@netlify/plugin-nextjs": "^5.10.2",
     "@tailwindcss/postcss": "^4",
     "@types/leaflet": "^1.9.17",
+    "@types/next": "^9.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

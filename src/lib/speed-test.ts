@@ -46,11 +46,11 @@ export const speedTestServers: SpeedTestServer[] = [
 ];
 
 export class SpeedTest {
-  private worker: Worker | null = null;
   private server: SpeedTestServer;
   private onProgress?: (result: SpeedTestResult) => void;
   private testState = -1;
   private result: SpeedTestResult;
+  private abortController: AbortController | null = null;
 
   constructor(server: SpeedTestServer = speedTestServers[0]) {
     this.server = server;
@@ -92,76 +92,250 @@ export class SpeedTest {
   }
 
   public abort() {
-    if (this.worker) {
-      this.worker.postMessage('abort');
-      this.worker.terminate();
-      this.worker = null;
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
     }
     this.testState = -1;
   }
 
+  private async measurePing(url: string): Promise<{ ping: number; jitter: number }> {
+    const pings: number[] = [];
+    const iterations = 10;
+    
+    for (let i = 0; i < iterations; i++) {
+      const start = performance.now();
+      try {
+        await fetch(url, { signal: this.abortController?.signal });
+        const end = performance.now();
+        pings.push(end - start);
+        
+        // Update progress
+        this.result.progress!.ping = ((i + 1) / iterations) * 100;
+        this.result.currentPing = end - start;
+        if (this.onProgress) this.onProgress(this.result);
+      } catch (error) {
+        if (error.name === 'AbortError') throw error;
+        console.error('Ping measurement error:', error);
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Calculate average ping and jitter
+    const avgPing = pings.reduce((a, b) => a + b, 0) / pings.length;
+    const jitters = pings.slice(1).map((ping, i) => Math.abs(ping - pings[i]));
+    const avgJitter = jitters.reduce((a, b) => a + b, 0) / jitters.length;
+
+    return { ping: avgPing, jitter: avgJitter };
+  }
+
+  private async measureSpeed(url: string, type: 'download' | 'upload'): Promise<number> {
+    const startTime = performance.now();
+    let totalBytes = 0;
+    const testDuration = 10000; // 10 seconds
+    const chunkSize = 1024 * 1024; // 1MB chunks
+
+    try {
+      if (type === 'download') {
+        // Add bytes parameter for download test
+        const downloadUrl = new URL(url, window.location.origin);
+        downloadUrl.searchParams.set('bytes', '134217728'); // 128MB for longer test duration
+        
+        const response = await fetch(downloadUrl.toString(), { signal: this.abortController?.signal });
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        if (!response.body) throw new Error('Response body is null');
+
+        let reader = response.body.getReader();
+        const contentLength = +response.headers.get('Content-Length') || 0;
+        console.log('Download test started:', { contentLength, url: downloadUrl.toString() });
+        
+        let lastUpdate = performance.now();
+        let lastBytes = 0;
+        let progress = 0;
+        const targetBytes = 134217728; // 128MB target
+        const minTestDuration = 10000; // Minimum 10 seconds test
+
+        while (true) {
+          const { done, value } = await reader.read();
+          const now = performance.now();
+          const elapsed = now - startTime;
+          
+          // If we've received all data but haven't reached minimum duration,
+          // start a new request
+          if (done) {
+            if (elapsed < minTestDuration) {
+              // Start a new request
+              const newResponse = await fetch(downloadUrl.toString(), { signal: this.abortController?.signal });
+              if (!newResponse.ok) break;
+              if (!newResponse.body) break;
+              reader.releaseLock();
+              reader = newResponse.body.getReader();
+              continue;
+            }
+            break;
+          }
+          
+          totalBytes += value.length;
+          
+          // Update speed and progress every 100ms
+          if (now - lastUpdate >= 100) {
+            const intervalSpeed = ((totalBytes - lastBytes) * 8) / (1024 * 1024 * ((now - lastUpdate) / 1000));
+            this.result.currentSpeed!.download = intervalSpeed;
+            
+            // Calculate progress based on time instead of bytes for smoother progress
+            progress = Math.min((elapsed / minTestDuration) * 100, 100);
+            this.result.progress!.download = progress;
+            
+            console.log('Download progress:', { 
+              totalBytes, 
+              progress, 
+              speed: intervalSpeed, 
+              elapsed,
+              targetBytes
+            });
+            
+            if (this.onProgress) this.onProgress(this.result);
+            
+            lastUpdate = now;
+            lastBytes = totalBytes;
+          }
+        }
+        
+        // Calculate final speed based on total bytes and time
+        const finalElapsed = (performance.now() - startTime) / 1000;
+        const finalSpeed = (totalBytes * 8) / (1024 * 1024 * finalElapsed);
+        this.result.currentSpeed!.download = finalSpeed;
+        this.result.progress!.download = 100;
+        if (this.onProgress) this.onProgress(this.result);
+        
+        console.log('Download test completed:', { 
+          totalBytes, 
+          finalSpeed,
+          duration: finalElapsed 
+        });
+      } else {
+        // Upload test
+        const chunkSize = 8 * 1024 * 1024; // 8MB chunks for upload
+        const startTime = performance.now();
+        const minTestDuration = 10000; // Minimum 10 seconds test
+        let lastUpdate = startTime;
+        let lastBytes = 0;
+        
+        // Pre-generate random data for upload
+        const uploadData = new Uint8Array(chunkSize);
+        for (let i = 0; i < chunkSize; i++) {
+          uploadData[i] = Math.random() * 256;
+        }
+
+        // Run multiple upload requests in parallel for better throughput
+        const parallelUploads = 6; // Increased parallel uploads
+        const uploadPromises = [];
+        let activeUploads = 0;
+
+        while (true) {
+          const elapsed = performance.now() - startTime;
+          if (elapsed >= minTestDuration && totalBytes >= chunkSize * parallelUploads) break;
+
+          // Start new uploads if we have less than parallelUploads running
+          while (activeUploads < parallelUploads) {
+            const uploadPromise = fetch(url, {
+              method: 'POST',
+              body: uploadData,
+              signal: this.abortController?.signal
+            }).then(() => {
+              totalBytes += chunkSize;
+              activeUploads--;
+              const now = performance.now();
+              
+              // Update speed and progress every 100ms
+              if (now - lastUpdate >= 100) {
+                const intervalSpeed = ((totalBytes - lastBytes) * 8) / (1024 * 1024 * ((now - lastUpdate) / 1000));
+                // Apply a small correction factor for network overhead
+                const correctedSpeed = intervalSpeed * 1.1;
+                this.result.currentSpeed!.upload = correctedSpeed;
+                this.result.progress!.upload = Math.min((elapsed / minTestDuration) * 100, 100);
+                if (this.onProgress) this.onProgress(this.result);
+                
+                lastUpdate = now;
+                lastBytes = totalBytes;
+              }
+            }).catch((error) => {
+              if (error.name !== 'AbortError') {
+                console.error('Upload chunk error:', error);
+              }
+              activeUploads--;
+            });
+            
+            uploadPromises.push(uploadPromise);
+            activeUploads++;
+          }
+
+          // Wait a short time before checking again
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+
+        // Wait for all remaining uploads to complete
+        await Promise.all(uploadPromises);
+
+        // Calculate final speed
+        const finalElapsed = (performance.now() - startTime) / 1000;
+        const finalSpeed = (totalBytes * 8) / (1024 * 1024 * finalElapsed);
+        // Apply the same correction factor
+        const correctedFinalSpeed = finalSpeed * 1.1;
+        this.result.currentSpeed!.upload = correctedFinalSpeed;
+        this.result.progress!.upload = 100;
+        if (this.onProgress) this.onProgress(this.result);
+        
+        console.log('Upload test completed:', {
+          totalBytes,
+          finalSpeed: correctedFinalSpeed,
+          duration: finalElapsed,
+          parallelUploads
+        });
+      }
+
+      const elapsed = (performance.now() - startTime) / 1000;
+      const speed = (totalBytes * 8) / (1024 * 1024 * elapsed);
+      return speed * 1.1; // Apply correction factor to returned speed
+    } catch (error) {
+      if (error.name === 'AbortError') throw error;
+      console.error(`${type} speed measurement error:`, error);
+      throw error;
+    }
+  }
+
   public async start(onProgress?: (result: SpeedTestResult) => void): Promise<SpeedTestResult> {
     this.onProgress = onProgress;
+    this.abortController = new AbortController();
 
-    return new Promise((resolve, reject) => {
-      try {
-        // Create worker
-        this.worker = new Worker('/speedtest_worker.js');
+    try {
+      // Run ping test
+      this.testState = 0;
+      const { ping, jitter } = await this.measurePing(this.server.pingUrl);
+      this.result.ping = ping;
+      this.result.jitter = jitter;
 
-        // Handle messages from worker
-        this.worker.onmessage = (e) => {
-          const data = JSON.parse(e.data);
-          this.testState = data.testState;
+      // Run download test
+      this.testState = 1;
+      this.result.download = await this.measureSpeed(this.server.downloadUrl, 'download');
 
-          // Update result object
-          this.result.currentSpeed = {
-            download: data.dlStatus,
-            upload: data.ulStatus
-          };
-          this.result.currentPing = data.pingStatus;
-          this.result.currentJitter = data.jitterStatus;
-          this.result.progress = {
-            download: data.dlProgress * 100,
-            upload: data.ulProgress * 100,
-            ping: data.pingProgress * 100
-          };
+      // Run upload test
+      this.testState = 2;
+      this.result.upload = await this.measureSpeed(this.server.uploadUrl, 'upload');
 
-          // If test is complete, set final values
-          if (data.testState === 4) {
-            this.result.download = data.dlStatus;
-            this.result.upload = data.ulStatus;
-            this.result.ping = data.pingStatus;
-            this.result.jitter = data.jitterStatus;
-          }
-
-          // Call progress callback
-          if (this.onProgress) {
-            this.onProgress(this.result);
-          }
-
-          // If test is complete or aborted, resolve/reject promise
-          if (data.testState === 4) {
-            this.worker?.terminate();
-            this.worker = null;
-            resolve(this.result);
-          } else if (data.testState === 5) {
-            this.worker?.terminate();
-            this.worker = null;
-            reject(new Error('Test aborted'));
-          }
-        };
-
-        // Start test
-        this.worker.postMessage('start ' + JSON.stringify({
-          url_dl: this.server.downloadUrl,
-          url_ul: this.server.uploadUrl,
-          url_ping: this.server.pingUrl
-        }));
-      } catch (error) {
-        console.error('Failed to start speed test:', error);
-        reject(error);
+      // Test complete
+      this.testState = 4;
+      return this.result;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        this.testState = 5;
+        throw new Error('Test aborted');
       }
-    });
+      console.error('Speed test error:', error);
+      throw error;
+    } finally {
+      this.abortController = null;
+    }
   }
 }
 

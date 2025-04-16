@@ -12,6 +12,7 @@ const nextConfig = {
       test: /\.html$/,
       use: 'ignore-loader'
     });
+    
     return config;
   },
   experimental: {
